@@ -12,3 +12,6 @@ __pycache__/
 *.log
 Thumbs.db
 .DS_Store
+
+# Quell-Bild (nur hero.jpg wird veroeffentlicht)
+Trumpf Bild.png
