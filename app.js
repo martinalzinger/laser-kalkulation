@@ -102,6 +102,15 @@ async function handleFiles(list){
   showWork(); renderPositions(); recalc();
 }
 function showWork(){ $('#dropArea').classList.add('hidden'); $('#posArea').classList.remove('hidden'); $('#sec-pos').scrollIntoView(); }
+function clearList(){
+  if(!PARTS.length) return;
+  if(!confirm('Alle Positionen entfernen und neu starten?')) return;
+  PARTS=[]; PDFDOC=null; PLANNAME=''; WERKSTOFF=''; DICKE=0;
+  $('#posArea').classList.add('hidden'); $('#dropArea').classList.remove('hidden');
+  $('#pdfbox')?.classList.add('hidden'); $('#planMeta').textContent='';
+  renderPositions(); recalc(); $('#sec-pos').scrollIntoView();
+  toast('Liste geleert.');
+}
 
 // ---------- TruTops-PDF ----------
 async function extractText(doc){ let f=''; for(let n=1;n<=doc.numPages;n++){const pg=await doc.getPage(n);const tc=await pg.getTextContent();f+=tc.items.map(i=>i.str).join('\n')+'\n';} return f; }
@@ -532,6 +541,7 @@ $('#d_datum').value=new Date().toLocaleDateString('de-DE');
 $('#drop').onclick=()=>$('#fileInput').click();
 $('#reload').onclick=()=>$('#fileInput').click();
 $('#addFile').onclick=()=>$('#fileInput').click();
+$('#clearList').onclick=clearList;
 $('#fileInput').onchange=e=>{handleFiles(e.target.files);e.target.value='';};
 ['dragover','dragenter'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.remove('over');}));
