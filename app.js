@@ -218,10 +218,38 @@ function detectBends(meshes){
   const flanges=clusters.filter(c=>c.area>0.12*maxA && c.area>0.03*total).length;
   return Math.max(0, flanges-1);
 }
+// Werkstoff aus STEP-Text lesen (falls vorhanden) und auf bekannte Bezeichnung normieren
+function detectMaterialFromStep(text){
+  if(!text) return '';
+  let m=text.match(/MATERIAL[A-Z_]*\(\s*'([^']+)'/i);
+  if(m) return m[1].trim();
+  // STEP-Strings korrekt tokenisieren (leere ''/escapte '' beachten), Koordinaten ignorieren
+  const labels=text.match(/'(?:''|[^'])*'/g)||[];
+  const pats=[/1\.4\d{3}/, /1\.0\d{3}/, /S235\w*/i, /S355\w*/i, /DC0\d/i, /X\d+CrNi[\w-]*/i, /AlMg\d/i, /EN ?AW[- ]?\d+/i, /St(37|52)\b/i];
+  for(const lab of labels){ const s=lab.slice(1,-1).trim();
+    if(!s || s.length>60 || /[()#=]/.test(s)) continue;  // keine Geometrie-/Verweis-Strings
+    for(const p of pats){ const mm=s.match(p); if(mm) return mm[0]; } }
+  return '';
+}
+function normMaterial(raw){
+  const s=(raw||'').toUpperCase();
+  if(/1\.4404|X2CRNIMO/.test(s)) return '1.4404';
+  if(/1\.4571|TI17-12/.test(s)) return '1.4571';
+  if(/1\.4301|X5CRNI18|V2A/.test(s)) return '1.4301';
+  if(/S355|1\.0577|ST52/.test(s)) return 'S355';
+  if(/S235|1\.0038|ST37/.test(s)) return 'S235';
+  if(/DC01|1\.0330/.test(s)) return 'DC01';
+  if(/ALMG|EN ?AW|ALUMIN/.test(s)) return 'AlMg3';
+  const e=s.match(/1\.4\d{3}/); if(e) return e[0];
+  return raw.trim();
+}
 async function loadStep(buf,name){
   showLoad('STEP wird eingelesen … (große Baugruppen können dauern)');
   await new Promise(r=>setTimeout(r,30));
   try{
+    const stepText=new TextDecoder('latin1').decode(new Uint8Array(buf));
+    const matRaw=detectMaterialFromStep(stepText);
+    const material=matRaw?normMaterial(matRaw):'1.4301';
     const occt=await ensureOcct();
     const r=occt.ReadStepFile(new Uint8Array(buf),null);
     if(!r||!r.success||!r.meshes||!r.meshes.length){ toast('STEP ohne darstellbare Volumenkörper: '+name); return; }
@@ -243,12 +271,12 @@ async function loadStep(buf,name){
     const blank = dicke>0 ? vol/dicke : 0;            // mm² Blechfläche (≈ V/t)
     let cutlen = dicke>0 ? (area - 2*blank)/dicke : 0; // mm Umfang inkl. Löcher
     if(!(cutlen>0)) cutlen=0;
-    const p={ teilenr:name.replace(/\.(stp|step)$/i,''), source:'step', quelle:name, material:'1.4301',
+    const p={ teilenr:name.replace(/\.(stp|step)$/i,''), source:'step', quelle:name, material,
       dicke, menge:1, biegungen:bends, _autoBends:true, gewicht:0, einstech:1, auftrag:'',
       cutlen_mm:cutlen, vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims},
       step:meshes, laser_min:0, _autoLaser:true };
     recomputeCad(p); PARTS.push(p);
-    toast(`STEP: ${p.teilenr} · ${fmt(dims[2],0)}×${fmt(dims[1],0)}×${fmt(dims[0],1)} mm · ${bends} Biegung(en) erkannt`);
+    toast(`STEP: ${p.teilenr} · ${fmt(dims[0],1)} mm · ${matRaw?('Werkstoff '+p.material):'kein Werkstoff in Datei → '+p.material}· ${bends} Biegung(en)`);
   } finally { hideLoad(); }
 }
 
