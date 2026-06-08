@@ -2,7 +2,19 @@
 'use strict';
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
 
-const PARAMS = { laser_satz:134.17, abkant_satz:85.00, marge:30, min_pos:15, prog_pos:25, ruest_pos:50, sek_biegung:30, pierce_s:0.5 };
+const PARAMS = {
+  laser_satz:134.17,   // €/h Laser (TruLaser 5030)
+  abkant_satz:85.00,   // €/h Abkanten
+  prog_satz:60.00,     // €/h Programmierung/Büro
+  marge:30,            // % Aufschlag auf VK
+  min_pos:15,          // € Mindestposition
+  prog_min:12,         // min Programmieren je Teilenummer (auf Menge umgelegt)
+  ruest_laser_min:5,   // min Laser-Rüsten je Position (umgelegt)
+  ruest_biege_min:8,   // min Biege-Rüsten je Position (umgelegt, nur bei Biegung)
+  handling_s:15,       // s Handling je Teil beim Biegen
+  t_biege_s:20,        // s je Biegung
+  laser_overhead:1.4   // Faktor Maschinenzeit/Beam-on (nur DXF-Schätzung)
+};
 const MATERIAL = {'1.4301':4.90,'1.4571':6.50,'1.4404':5.80,'S235':1.30,'S355':1.50,'S355MC':1.55,'S235MC':1.35,'DC01':1.40,'AlMg3':4.20,'RAEX':2.20,'Cu':10.00};
 const DENSITY = {'1.4':7900,'S2':7850,'S3':7850,'DC':7850,'RAEX':7850,'AlMg':2700,'Al':2700,'Cu':8900}; // kg/m³ je Präfix
 function density(m){ for(const k in DENSITY){ if(m&&m.startsWith(k)) return DENSITY[k]; } return 7850; }
@@ -16,6 +28,8 @@ const SPEED = {
 function speedGroup(m){ if(!m) return 'stahl'; if(m.startsWith('1.4')) return 'edelstahl'; if(m.startsWith('Al')) return 'alu'; return 'stahl'; }
 function speedFor(m,t){ const g=SPEED[speedGroup(m)],ts=g.t,vs=g.v; if(t<=ts[0])return vs[0]; if(t>=ts[ts.length-1])return vs[vs.length-1];
   for(let i=1;i<ts.length;i++){ if(t<=ts[i]){ const f=(t-ts[i-1])/(ts[i]-ts[i-1]); return vs[i-1]+f*(vs[i]-vs[i-1]); } } return vs[vs.length-1]; }
+// Einstechzeit (s) nach Dicke
+function pierceTime(t){ return t<=3?0.4 : t<=6?0.8 : t<=10?1.5 : 2.5; }
 
 let PARTS=[], PDFDOC=null, PAGE=1, SCALE=1.2, PLANNAME='', WERKSTOFF='', DICKE=0, OCCT=null;
 
@@ -31,17 +45,28 @@ function matPrice(name){
 }
 function calc(p){
   const {p:price,known}=matPrice(p.material); p._known=known;
-  const matk=p.gewicht*price;
-  const laserk=p.laser_min*PARAMS.laser_satz/60;
-  const biegek=(p.biegungen||0)*(PARAMS.sek_biegung/3600)*PARAMS.abkant_satz;
   const menge=Math.max(1,parseInt(p.menge)||1);
-  const progk=PARAMS.prog_pos/menge;
-  const ruestk=PARAMS.ruest_pos/menge;
-  const selbstk=matk+progk+ruestk+laserk+biegek;
-  const vk=PARAMS.marge<100?selbstk/(1-PARAMS.marge/100):selbstk;
+  const bends=Math.max(0,parseInt(p.biegungen)||0);
+  // Stückkosten (variabel)
+  const matk=p.gewicht*price;
+  const laserk=p.laser_min*PARAMS.laser_satz/60;            // Laserzeit (min) × €/h
+  const biege_s=bends>0 ? (PARAMS.handling_s + bends*PARAMS.t_biege_s) : 0;
+  const biegek=biege_s*PARAMS.abkant_satz/3600;             // Biegezeit (s) × €/h
+  const varUnit=matk+laserk+biegek;
+  // Fixkosten je Position (auf Menge umgelegt)
+  const progFix=PARAMS.prog_min*PARAMS.prog_satz/60;        // Programmieren
+  const ruestFix=PARAMS.ruest_laser_min*PARAMS.laser_satz/60
+               + (bends>0?PARAMS.ruest_biege_min*PARAMS.abkant_satz/60:0); // Rüsten Laser(+Biegen)
+  const fixPos=progFix+ruestFix;
+  const progk=progFix/menge, ruestk=ruestFix/menge;
+  const selbstk=varUnit+progk+ruestk;
+  const m=PARAMS.marge/100;
+  const vk=m<1?selbstk/(1-m):selbstk;
   const position=Math.max(vk*menge,PARAMS.min_pos);
-  return {matk,progk,laserk,biegek,ruestk,selbstk,vk,position,menge,known};
+  return {matk,progk,ruestk,laserk,biegek,biege_s,varUnit,fixPos,selbstk,vk,position,menge,known};
 }
+// VK je Stück bei Stückzahl Q (Fixkosten ÷ Q) – für Staffelpreise
+function unitVkAt(p,Q){ const c=calc(p); const sk=c.varUnit + c.fixPos/Math.max(1,Q); const m=PARAMS.marge/100; return m<1?sk/(1-m):sk; }
 const grandTotal=()=>PARTS.reduce((a,p)=>a+calc(p).position,0);
 const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
@@ -52,7 +77,10 @@ function recomputeCad(p){
     p.gewicht = +(p.area_m2 * (p.dicke/1000) * d).toFixed(3);
     if(p._autoLaser){
       const v=speedFor(p.material,p.dicke||1);
-      p.laser_min = +((p.cutlen_mm/Math.max(150,v)) + (p.einstech||0)*PARAMS.pierce_s/60).toFixed(2);
+      const beam=p.cutlen_mm/Math.max(150,v);                 // Beam-on (min)
+      const pierce=(p.einstech||0)*pierceTime(p.dicke||1)/60;  // Einstechzeit
+      const rapid=beam*0.10;                                   // Eilgang ~10%
+      p.laser_min = +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
     }
   }else if(p.source==='step'){
     p.gewicht = +(p.vol_m3 * d).toFixed(3);
@@ -248,7 +276,10 @@ function renderPositions(){
       <div class="cs-item dim"><span class="k">Selbstkosten/St</span><span class="v">${eur(c.selbstk)}</span></div>
       <div class="cs-item dim"><span class="k">VK/St +${fmt(PARAMS.marge,0)}%</span><span class="v">${eur(c.vk)}</span></div>
       <div class="cs-item tot"><span class="k">Gesamt ${c.menge}×</span><span class="v">${eur(c.position)}</span></div>
-    </div><div class="cs-hint">Werte je Stück · Programmieren &amp; Rüsten auf Menge ${c.menge} verteilt${c.position>c.vk*c.menge+0.005?' · Mindestposition '+eur(PARAMS.min_pos):''}</div>`;
+    </div><div class="cs-hint">Werte je Stück · Programmieren &amp; Rüsten auf Menge ${c.menge} verteilt${c.position>c.vk*c.menge+0.005?' · Mindestposition '+eur(PARAMS.min_pos):''}</div>
+    <div class="cs-staffel"><div class="lbl">Staffelpreise (VK netto je Stück)</div><div class="qs">${
+      [...new Set([1,5,10,25,50,c.menge])].sort((a,b)=>a-b).map(q=>{const u=unitVkAt(p,q);return `<div class="cs-q${q===c.menge?' cur':''}"><span class="qn">${q} Stück</span><span class="qp">${eur(u)}</span><span class="qg">= ${eur(u*q)}</span></div>`;}).join('')
+    }</div></div>`;
     if(p._open) row.classList.add('open');
     el.appendChild(det);
     row.addEventListener('click',e=>{ if(e.target.closest('input,select,button')) return; p._open=!p._open; det.classList.toggle('open',p._open); row.classList.toggle('open',p._open); });
@@ -400,9 +431,15 @@ let tT; function toast(m){let t=$('#toast');if(!t){t=document.createElement('div
 
 // ---------- Parameter ----------
 function bindParams(){
-  const map={p_laser:'laser_satz',p_abk:'abkant_satz',p_marge:'marge',p_min:'min_pos',p_prog:'prog_pos',p_ruest:'ruest_pos',p_bieg:'sek_biegung'};
-  for(const id in map){ const el=$('#'+id); el.value=fmt(PARAMS[map[id]],id==='p_marge'||id==='p_bieg'?0:2);
-    el.onchange=()=>{ PARAMS[map[id]]=numDe(el.value); PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); }; }
+  const map={
+    p_laser:['laser_satz',2], p_abk:['abkant_satz',2], p_prog_satz:['prog_satz',2],
+    p_marge:['marge',0], p_min:['min_pos',2],
+    p_progmin:['prog_min',0], p_rl:['ruest_laser_min',0], p_rb:['ruest_biege_min',0],
+    p_hand:['handling_s',0], p_tb:['t_biege_s',0], p_ovh:['laser_overhead',2]
+  };
+  for(const id in map){ const [key,dec]=map[id]; const el=$('#'+id); if(!el) continue;
+    el.value=fmt(PARAMS[key],dec);
+    el.onchange=()=>{ PARAMS[key]=numDe(el.value); PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); }; }
 }
 
 // ---------- Material-Dialog ----------

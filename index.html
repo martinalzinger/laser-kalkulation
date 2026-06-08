@@ -106,6 +106,14 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .cs-item.dim .v{color:var(--muted);font-weight:500}
 .cs-item.tot .v{color:var(--red);font-size:15px;font-weight:700}
 .cs-hint{font-family:var(--mono);font-size:9px;letter-spacing:.05em;color:var(--faint);margin-top:9px}
+.cs-staffel{margin-top:11px;padding-top:11px;border-top:1px dashed var(--line)}
+.cs-staffel .lbl{font-family:var(--mono);font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:7px}
+.cs-staffel .qs{display:flex;flex-wrap:wrap;gap:8px}
+.cs-q{display:flex;flex-direction:column;gap:1px;border:1px solid var(--line);border-radius:8px;padding:7px 12px;min-width:86px;background:#fff}
+.cs-q.cur{border-color:var(--red);background:var(--red-soft)}
+.cs-q .qn{font-family:var(--mono);font-size:9px;color:var(--muted)}
+.cs-q .qp{font-family:var(--mono);font-weight:700;font-size:13.5px;color:var(--ink)}
+.cs-q .qg{font-family:var(--mono);font-size:9px;color:var(--faint)}
 
 /* PDF preview */
 .pdfbox{margin-top:14px}
@@ -311,16 +319,26 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
     <div class="kick2">04 · Kalkulation</div>
     <h2>Sätze &amp; Marge</h2>
     <div class="subnote">Standard aus TruTops Calculate · TruLaser 5030 = 134,17 €/h</div>
-    <div class="card"><div class="grid">
-      <div class="fld"><label>Laser €/h</label><input id="p_laser"></div>
-      <div class="fld"><label>Abkanten €/h</label><input id="p_abk"></div>
-      <div class="fld"><label>Marge %</label><input id="p_marge"></div>
-      <div class="fld"><label>Mindestposition €</label><input id="p_min"></div>
-      <div class="fld"><label>Programmieren €/Position</label><input id="p_prog"></div>
-      <div class="fld"><label>Rüsten €/Position</label><input id="p_ruest"></div>
-      <div class="fld"><label>Sekunden je Biegung</label><input id="p_bieg"></div>
-      <div class="fld" style="justify-content:flex-end"><button class="btn s" id="btnMaterial">Materialpreise bearbeiten</button></div>
-    </div></div>
+    <div class="card">
+      <div class="subnote" style="margin-top:0">Stundensätze &amp; Marge</div>
+      <div class="grid" style="margin-bottom:14px">
+        <div class="fld"><label>Laser €/h</label><input id="p_laser"></div>
+        <div class="fld"><label>Abkanten €/h</label><input id="p_abk"></div>
+        <div class="fld"><label>Programmieren €/h</label><input id="p_prog_satz"></div>
+        <div class="fld"><label>Marge %</label><input id="p_marge"></div>
+        <div class="fld"><label>Mindestposition €</label><input id="p_min"></div>
+      </div>
+      <div class="subnote">Zeiten je Prozess (auf Menge umgelegt, wo fix)</div>
+      <div class="grid">
+        <div class="fld"><label>Programmieren min/Teil</label><input id="p_progmin"></div>
+        <div class="fld"><label>Rüsten Laser min</label><input id="p_rl"></div>
+        <div class="fld"><label>Rüsten Biegen min</label><input id="p_rb"></div>
+        <div class="fld"><label>Handling s/Teil (Biegen)</label><input id="p_hand"></div>
+        <div class="fld"><label>Zeit je Biegung s</label><input id="p_tb"></div>
+        <div class="fld"><label>Laser-Overhead × (DXF)</label><input id="p_ovh"></div>
+        <div class="fld" style="justify-content:flex-end"><button class="btn s" id="btnMaterial">Materialpreise bearbeiten</button></div>
+      </div>
+    </div>
   </section>
 
   <div style="height:30px"></div>

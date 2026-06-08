@@ -25,19 +25,32 @@ TruTops-Boost-Plänen – im Design des Lepton-5100-Konfigurators
 5. Unten **Angebot ansehen** → druckfertiges Angebot mit Briefkopf, dunkler
    Auftragsumfang-Box, Positionen und AGB → **Drucken / PDF**. Oder **CSV**.
 
-## Preismodell
+## Preismodell (prozessbasiert, mit Mengen-Umlage)
+Echte Zeiten je Prozess × Stundensatz; Fixkosten werden auf die Menge
+umgelegt (→ Staffelpreise, wie bei 247TailorSteel).
 ```
-Materialkosten = Gewicht × €/kg(Material)
-Laserkosten    = Laserzeit(min) × Laser-€/h ÷ 60
-Abkantkosten   = Biegungen × (Sek/Biegung ÷ 3600) × Abkant-€/h
-Rüstanteil     = Rüst-€/Position ÷ Menge
-Selbstkosten   = Material + Laser + Abkant + Rüst
-VK je Stück    = Selbstkosten ÷ (1 − Marge%)
-Position €     = max( VK × Menge , Mindestpositionswert )
+Stückkosten (variabel):
+  Material = Gewicht × €/kg
+  Lasern   = Laserzeit(min) × Laser-€/h ÷ 60
+             (Plan: exakte TruTops-Zeit · DXF: ΣKontur÷v + Einstiche
+              + Eilgang, × Overhead · STEP: manuell im Viewer)
+  Biegen   = (Handling/Teil + Biegungen × Zeit/Biegung) × Abkant-€/h ÷ 3600
+Fixkosten je Position (÷ Menge):
+  Programmieren = Prog-min × Prog-€/h ÷ 60
+  Rüsten        = Laser-Rüst-min × Laser-€/h ÷ 60
+                  (+ Biege-Rüst-min × Abkant-€/h ÷ 60, falls Biegung)
+Selbstkosten/St = variabel + Fix ÷ Menge
+VK/St           = Selbstkosten ÷ (1 − Marge%)
+Position        = max( VK × Menge , Mindestposition )
+Staffelpreis(Q) = (variabel + Fix ÷ Q) ÷ (1 − Marge%)
 ```
-Standard (TruTops Calculate): Laser **134,17 €/h** (TruLaser 5030) ·
-Abkanten 85 €/h · Marge 30 % · Rüst 75 €/Pos · Min. 15 € · 30 s/Biegung.
-Materialpreise sind Schätzwerte – bitte mit Einkaufspreisen prüfen.
+**Standard-Richtwerte** (editierbar unter „04 · Kalkulation"): Laser
+134,17 €/h (TruLaser 5030) · Abkanten 85 €/h · Programmieren 60 €/h ·
+Marge 30 % · Min. 15 € · Programmieren 12 min/Teil · Rüsten Laser 5 min ·
+Rüsten Biegen 8 min · Handling 15 s/Teil · 20 s/Biegung · Laser-Overhead ×1,4.
+Einstechzeit nach Dicke (0,4–2,5 s). **Bitte an die eigenen Maschinen/Zeiten
+anpassen** – die Richtwerte ergeben andere Summen als eine Pauschale.
+Materialpreise sind Schätzwerte – mit Einkaufspreisen prüfen.
 
 ## Auf GitHub Pages stellen (wie der Konfigurator)
 1. Neues Repo anlegen, z. B. `laser-kalkulation`.
