@@ -2,7 +2,7 @@
 'use strict';
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
 
-const PARAMS = { laser_satz:134.17, abkant_satz:85.00, marge:30, min_pos:15, ruest_pos:75, sek_biegung:30, pierce_s:0.5 };
+const PARAMS = { laser_satz:134.17, abkant_satz:85.00, marge:30, min_pos:15, prog_pos:25, ruest_pos:50, sek_biegung:30, pierce_s:0.5 };
 const MATERIAL = {'1.4301':4.90,'1.4571':6.50,'1.4404':5.80,'S235':1.30,'S355':1.50,'S355MC':1.55,'S235MC':1.35,'DC01':1.40,'AlMg3':4.20,'RAEX':2.20,'Cu':10.00};
 const DENSITY = {'1.4':7900,'S2':7850,'S3':7850,'DC':7850,'RAEX':7850,'AlMg':2700,'Al':2700,'Cu':8900}; // kg/m³ je Präfix
 function density(m){ for(const k in DENSITY){ if(m&&m.startsWith(k)) return DENSITY[k]; } return 7850; }
@@ -35,11 +35,12 @@ function calc(p){
   const laserk=p.laser_min*PARAMS.laser_satz/60;
   const biegek=(p.biegungen||0)*(PARAMS.sek_biegung/3600)*PARAMS.abkant_satz;
   const menge=Math.max(1,parseInt(p.menge)||1);
+  const progk=PARAMS.prog_pos/menge;
   const ruestk=PARAMS.ruest_pos/menge;
-  const selbstk=matk+laserk+biegek+ruestk;
+  const selbstk=matk+progk+ruestk+laserk+biegek;
   const vk=PARAMS.marge<100?selbstk/(1-PARAMS.marge/100):selbstk;
   const position=Math.max(vk*menge,PARAMS.min_pos);
-  return {matk,laserk,biegek,ruestk,selbstk,vk,position,menge,known};
+  return {matk,progk,laserk,biegek,ruestk,selbstk,vk,position,menge,known};
 }
 const grandTotal=()=>PARTS.reduce((a,p)=>a+calc(p).position,0);
 const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
@@ -233,8 +234,24 @@ function renderPositions(){
       <div class="mini m"><label>Menge</label><input data-i="${i}" data-k="menge" value="${c.menge}"></div>
       <div class="mini b"><label>Biegungen</label><input data-i="${i}" data-k="biegungen" value="${p.biegungen||0}"></div>
       <div class="price ep" title="Einzelpreis netto / Stück">${eur(c.vk)}</div>
-      <div class="price" title="Gesamtpreis netto (${c.menge}× ${eur(c.vk)})">${eur(c.position)}</div>`;
+      <div class="price" title="Gesamtpreis netto (${c.menge}× ${eur(c.vk)})">${eur(c.position)} ▾</div>`;
+    row.title='Klicken für Kostenaufschlüsselung';
     el.appendChild(row);
+    const det=document.createElement('div'); det.className='costsplit'+(p._open?' open':'');
+    det.innerHTML=`<div class="cs-row">
+      <div class="cs-item"><span class="k">Material</span><span class="v">${eur(c.matk)}</span></div>
+      <div class="cs-item"><span class="k">Programmieren</span><span class="v">${eur(c.progk)}</span></div>
+      <div class="cs-item"><span class="k">Rüsten</span><span class="v">${eur(c.ruestk)}</span></div>
+      <div class="cs-item"><span class="k">Lasern</span><span class="v">${eur(c.laserk)}</span></div>
+      <div class="cs-item"><span class="k">Biegen</span><span class="v">${eur(c.biegek)}</span></div>
+      <div class="cs-sep"></div>
+      <div class="cs-item dim"><span class="k">Selbstkosten/St</span><span class="v">${eur(c.selbstk)}</span></div>
+      <div class="cs-item dim"><span class="k">VK/St +${fmt(PARAMS.marge,0)}%</span><span class="v">${eur(c.vk)}</span></div>
+      <div class="cs-item tot"><span class="k">Gesamt ${c.menge}×</span><span class="v">${eur(c.position)}</span></div>
+    </div><div class="cs-hint">Werte je Stück · Programmieren &amp; Rüsten auf Menge ${c.menge} verteilt${c.position>c.vk*c.menge+0.005?' · Mindestposition '+eur(PARAMS.min_pos):''}</div>`;
+    if(p._open) row.classList.add('open');
+    el.appendChild(det);
+    row.addEventListener('click',e=>{ if(e.target.closest('input,select,button')) return; p._open=!p._open; det.classList.toggle('open',p._open); row.classList.toggle('open',p._open); });
   });
   el.querySelectorAll('select[data-k],input[data-k]').forEach(inp=>{
     inp.onchange=e=>{
@@ -383,7 +400,7 @@ let tT; function toast(m){let t=$('#toast');if(!t){t=document.createElement('div
 
 // ---------- Parameter ----------
 function bindParams(){
-  const map={p_laser:'laser_satz',p_abk:'abkant_satz',p_marge:'marge',p_min:'min_pos',p_ruest:'ruest_pos',p_bieg:'sek_biegung'};
+  const map={p_laser:'laser_satz',p_abk:'abkant_satz',p_marge:'marge',p_min:'min_pos',p_prog:'prog_pos',p_ruest:'ruest_pos',p_bieg:'sek_biegung'};
   for(const id in map){ const el=$('#'+id); el.value=fmt(PARAMS[map[id]],id==='p_marge'||id==='p_bieg'?0:2);
     el.onchange=()=>{ PARAMS[map[id]]=numDe(el.value); PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); }; }
 }
@@ -450,10 +467,10 @@ function openAngebot(){
 // ---------- CSV ----------
 function exportCsv(){
   if(!PARTS.length){toast('Keine Positionen.');return;}
-  const head=['Pos','Teile-Nr','Quelle','Material','Dicke_mm','Menge','kg/St','Laser_min','Biegungen','Material_EUR','Laser_EUR','Abkant_EUR','Ruest_EUR','Selbstk_EUR','VK_EUR','Position_EUR'];
+  const head=['Pos','Teile-Nr','Quelle','Material','Dicke_mm','Menge','kg/St','Laser_min','Biegungen','Material_EUR','Programmieren_EUR','Ruesten_EUR','Lasern_EUR','Biegen_EUR','Selbstk_EUR','VK_EUR','Position_EUR'];
   const L=[head.join(';')];
-  PARTS.forEach((p,i)=>{const c=calc(p);L.push([i+1,p.teilenr,p.source,p.material,fmt(p.dicke,2),c.menge,fmt(p.gewicht,3),fmt(p.laser_min,3),p.biegungen||0,fmt(c.matk),fmt(c.laserk),fmt(c.biegek),fmt(c.ruestk),fmt(c.selbstk),fmt(c.vk),fmt(c.position)].join(';'));});
-  L.push(['','','','','','','','','','','','','','','Gesamt',fmt(grandTotal())].join(';'));
+  PARTS.forEach((p,i)=>{const c=calc(p);L.push([i+1,p.teilenr,p.source,p.material,fmt(p.dicke,2),c.menge,fmt(p.gewicht,3),fmt(p.laser_min,3),p.biegungen||0,fmt(c.matk),fmt(c.progk),fmt(c.ruestk),fmt(c.laserk),fmt(c.biegek),fmt(c.selbstk),fmt(c.vk),fmt(c.position)].join(';'));});
+  const foot=new Array(head.length).fill(''); foot[15]='Gesamt'; foot[16]=fmt(grandTotal()); L.push(foot.join(';'));
   const blob=new Blob(['﻿'+L.join('\r\n')],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=((PLANNAME||'Laser-Kalkulation').replace(/\.pdf$/i,''))+'.csv';a.click();
   toast('CSV exportiert.');
