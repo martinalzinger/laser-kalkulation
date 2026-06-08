@@ -185,11 +185,12 @@ function renderPositions(){
     row.innerHTML=`
       <div class="pidx">${i+1}</div>
       <div class="nm"><b>${p.teilenr||'—'}${badge}</b><small>${sub}</small>${viewBtn}</div>
-      <div class="mini"><label>Material</label><select data-i="${i}" data-k="material">${matOpts}</select></div>
+      <div class="mini mat"><label>Material</label><select data-i="${i}" data-k="material">${matOpts}</select></div>
       <div class="mini d"><label>Dicke mm</label><input data-i="${i}" data-k="dicke" value="${fmt(p.dicke,2)}"></div>
-      <div class="mini"><label>Menge</label><input data-i="${i}" data-k="menge" value="${c.menge}"></div>
+      <div class="mini m"><label>Menge</label><input data-i="${i}" data-k="menge" value="${c.menge}"></div>
       <div class="mini b"><label>Biegungen</label><input data-i="${i}" data-k="biegungen" value="${p.biegungen||0}"></div>
-      <div class="price">${eur(c.position)}</div>`;
+      <div class="price ep" title="Einzelpreis netto / Stück">${eur(c.vk)}</div>
+      <div class="price" title="Gesamtpreis netto (${c.menge}× ${eur(c.vk)})">${eur(c.position)}</div>`;
     el.appendChild(row);
   });
   el.querySelectorAll('select[data-k],input[data-k]').forEach(inp=>{

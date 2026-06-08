@@ -71,7 +71,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .poshead .cnt{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .poshead .planmeta{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
 .poslist{display:flex;flex-direction:column}
-.posrow{display:grid;grid-template-columns:30px 1fr 90px 110px 70px 78px 96px;gap:12px;align-items:center;
+.posrow{display:grid;grid-template-columns:32px 1fr 98px 66px 58px 66px 94px 104px;gap:11px;align-items:center;
   padding:12px 4px;border-top:1px solid var(--line)}
 .posrow:first-child{border-top:0}
 .posrow .pidx{width:26px;height:26px;border-radius:7px;background:var(--ink);color:#fff;font-family:var(--mono);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center}
@@ -81,8 +81,9 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .posrow input,.posrow select{font-family:var(--sans);font-size:13px;border:1px solid var(--line-strong);background:var(--field);border-radius:7px;padding:7px 8px;color:var(--ink);width:100%;outline:none}
 .posrow input:focus,.posrow select:focus{border-color:var(--red);background:#fff}
 .posrow .mini label{display:block;font-family:var(--mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
-.posrow .price{text-align:right;font-family:var(--mono);font-weight:600;font-size:15px}
-.poscols{display:grid;grid-template-columns:30px 1fr 90px 110px 70px 78px 96px;gap:12px;padding:0 4px 8px;
+.posrow .price{text-align:right;font-family:var(--mono);font-weight:700;font-size:15px;color:var(--ink)}
+.posrow .price.ep{font-weight:500;font-size:13px;color:var(--muted)}
+.poscols{display:grid;grid-template-columns:32px 1fr 98px 66px 58px 66px 94px 104px;gap:11px;padding:0 4px 8px;
   font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
 .poscols span{text-align:center}.poscols span.l{text-align:left}.poscols span.r{text-align:right}
 
@@ -179,8 +180,9 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 @keyframes sp{to{transform:rotate(360deg)}}
 .hidden{display:none!important}
 @media(max-width:760px){
-  .posrow,.poscols{grid-template-columns:26px 1fr 70px 84px;}
-  .posrow .mini.d,.posrow .mini.b,.poscols .hd,.poscols .hb{display:none}
+  .posrow,.poscols{grid-template-columns:26px 1fr 58px 92px;}
+  .posrow .mini.mat,.posrow .mini.d,.posrow .mini.b,.posrow .price.ep,
+  .poscols .hmat,.poscols .hd,.poscols .hb,.poscols .hep{display:none}
 }
 </style>
 </head>
@@ -268,7 +270,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
           <span class="planmeta" id="planMeta"></span>
         </div>
         <div class="poscols">
-          <span></span><span class="l">Teile-Nr</span><span>Material</span><span>Dicke / Menge</span><span>Menge</span><span class="hb">Biegungen</span><span class="r">Position</span>
+          <span></span><span class="l">Teile-Nr</span><span class="hmat">Material</span><span class="hd">Dicke</span><span>Menge</span><span class="hb">Bieg.</span><span class="r hep">€/Stück</span><span class="r">Gesamt</span>
         </div>
         <div class="poslist" id="poslist"></div>
         <div class="pdfbox" id="pdfbox">
