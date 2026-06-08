@@ -39,6 +39,19 @@ const numDe=s=>{s=String(s).trim().replace(/\./g,'').replace(',','.');const v=pa
 const fmt=(x,d=2)=>Number(x).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
 const eur=x=>fmt(x)+' €';
 
+// Einstellungen (Materialpreise + Sätze) dauerhaft im Browser speichern
+function saveSettings(){ try{
+  localStorage.setItem('alz_material',JSON.stringify(MATERIAL));
+  localStorage.setItem('alz_params',JSON.stringify(PARAMS));
+}catch(e){} }
+function loadSettings(){ try{
+  const m=JSON.parse(localStorage.getItem('alz_material')||'null');
+  if(m&&typeof m==='object'&&Object.keys(m).length){ for(const k in MATERIAL) delete MATERIAL[k]; Object.assign(MATERIAL,m); }
+  const p=JSON.parse(localStorage.getItem('alz_params')||'null');
+  if(p&&typeof p==='object') Object.assign(PARAMS,p);
+}catch(e){} }
+function resetSettings(){ try{ localStorage.removeItem('alz_material'); localStorage.removeItem('alz_params'); }catch(e){} location.reload(); }
+
 function matPrice(name){
   if(name in MATERIAL) return {p:MATERIAL[name],known:true};
   for(const m in MATERIAL){ if(name&&(name.startsWith(m)||m.startsWith(name))) return {p:MATERIAL[m],known:true}; }
@@ -522,7 +535,7 @@ function bindParams(){
   };
   for(const id in map){ const [key,dec]=map[id]; const el=$('#'+id); if(!el) continue;
     el.value=fmt(PARAMS[key],dec);
-    el.onchange=()=>{ PARAMS[key]=numDe(el.value); PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); }; }
+    el.onchange=()=>{ PARAMS[key]=numDe(el.value); PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); saveSettings(); }; }
 }
 
 // ---------- Material-Dialog ----------
@@ -532,15 +545,16 @@ function openMaterial(){
   m.innerHTML=`<div class="modal-card"><div class="modal-h"><h3>Materialpreise · €/kg</h3><button>✕</button></div>
     <div class="modal-b"><table class="mtab"><thead><tr><th>Werkstoff</th><th>€/kg</th></tr></thead><tbody id="mb">${rows}</tbody></table>
     <button class="btn s" id="madd" style="margin-top:12px">＋ Material</button></div>
-    <div class="modal-f"><button class="btn s" data-x>Abbrechen</button><button class="btn p" data-s>Speichern</button></div></div>`;
+    <div class="modal-f"><button class="btn s" id="mreset" style="margin-right:auto">↺ Standard</button><button class="btn s" data-x>Abbrechen</button><button class="btn p" data-s>Speichern</button></div></div>`;
   document.body.appendChild(m);
   const close=()=>m.remove();
   m.querySelector('.modal-h button').onclick=close; m.querySelector('[data-x]').onclick=close; m.onclick=e=>{if(e.target===m)close();};
   m.querySelector('#madd').onclick=()=>{const tr=document.createElement('tr');tr.innerHTML=`<td><input class="mn"></td><td><input class="pr mp" value="0,00"></td>`;m.querySelector('#mb').appendChild(tr);};
+  m.querySelector('#mreset').onclick=()=>{ if(confirm('Materialpreise und Sätze auf Standard zurücksetzen?')) resetSettings(); };
   m.querySelector('[data-s]').onclick=()=>{
     const ns=[...m.querySelectorAll('.mn')],ps=[...m.querySelectorAll('.mp')],nm={};
     ns.forEach((n,i)=>{const k=n.value.trim();if(k)nm[k]=numDe(ps[i].value);});
-    for(const k in MATERIAL)delete MATERIAL[k]; Object.assign(MATERIAL,nm);
+    for(const k in MATERIAL)delete MATERIAL[k]; Object.assign(MATERIAL,nm); saveSettings();
     PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); close();
   };
 }
@@ -603,9 +617,13 @@ $('#reload').onclick=()=>$('#fileInput').click();
 $('#addFile').onclick=()=>$('#fileInput').click();
 $('#clearList').onclick=clearList;
 $('#fileInput').onchange=e=>{handleFiles(e.target.files);e.target.value='';};
-['dragover','dragenter'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.add('over');}));
-['dragleave','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.remove('over');}));
-$('#drop').addEventListener('drop',e=>{ if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+// Drag & Drop seitenweit – funktioniert auch wenn schon Teile geladen sind
+let _dragDepth=0;
+const _hasFiles=e=>!!(e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files'));
+window.addEventListener('dragenter',e=>{ if(!_hasFiles(e))return; e.preventDefault(); _dragDepth++; $('#dropGlobal').classList.add('show'); });
+window.addEventListener('dragover',e=>{ if(_hasFiles(e)) e.preventDefault(); });
+window.addEventListener('dragleave',e=>{ if(!_hasFiles(e))return; _dragDepth=Math.max(0,_dragDepth-1); if(!_dragDepth) $('#dropGlobal').classList.remove('show'); });
+window.addEventListener('drop',e=>{ if(!_hasFiles(e))return; e.preventDefault(); _dragDepth=0; $('#dropGlobal').classList.remove('show'); if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
 $('#pgPrev').onclick=()=>renderPage(PAGE-1);
 $('#pgNext').onclick=()=>renderPage(PAGE+1);
 $('#zIn').onclick=()=>{SCALE=Math.min(3,SCALE+0.2);renderPage(PAGE);};
@@ -620,6 +638,7 @@ $('#drawerOv').onclick=()=>toggleDrawer(false);
 $('#btnCsv').onclick=exportCsv;
 $('#btnAngebot').onclick=()=>{ if(!PARTS.length){toast('Erst Dateien laden.');return;} openAngebot(); };
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeViewer(); $('#angebot')?.remove(); toggleDrawer(false); } });
+loadSettings();
 bindParams();
 window.__loadUrl=async url=>{const b=await(await fetch(url)).arrayBuffer();await loadPlan(b,url.split('/').pop());showWork();renderPositions();recalc();};
 window.__loadDxfUrl=async url=>{const t=await(await fetch(url)).text();await loadDxf(t,url.split('/').pop());showWork();renderPositions();recalc();};

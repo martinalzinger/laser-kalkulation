@@ -69,6 +69,11 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .drop svg{width:42px;height:42px;color:var(--red);margin-bottom:10px}
 .drop b{display:block;font-size:16px}
 .drop small{color:var(--faint);font-family:var(--mono);font-size:11px;letter-spacing:.06em}
+.dropglobal{position:fixed;inset:0;z-index:210;background:rgba(192,0,0,.10);border:3px dashed var(--red);
+  display:none;align-items:center;justify-content:center;pointer-events:none}
+.dropglobal.show{display:flex}
+.dropglobal .msg{background:#fff;border-radius:14px;padding:22px 30px;font-family:var(--mono);font-size:14px;
+  letter-spacing:.04em;color:var(--red);font-weight:600;box-shadow:0 20px 50px rgba(0,0,0,.25)}
 
 /* Positions */
 .poshead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
@@ -334,6 +339,9 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 
   <div style="height:30px"></div>
 </div>
+
+<!-- Globales Drop-Overlay (Drag & Drop überall) -->
+<div class="dropglobal" id="dropGlobal"><div class="msg">Datei(en) hier ablegen – Plan / STEP / DXF</div></div>
 
 <!-- BOTTOM BAR -->
 <div class="bar">
