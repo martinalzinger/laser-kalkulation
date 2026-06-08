@@ -20,10 +20,11 @@ const DENSITY = {'1.4':7900,'S2':7850,'S3':7850,'DC':7850,'RAEX':7850,'AlMg':270
 function density(m){ for(const k in DENSITY){ if(m&&m.startsWith(k)) return DENSITY[k]; } return 7850; }
 
 // Schnittgeschwindigkeit mm/min (Richtwerte Faserlaser 6 kW, TruLaser 5030) je Werkstoffgruppe/Dicke
+// Richtwerte 6-kW-Faserlaser (mm/min), verankert am Plan: 2 mm Edelstahl ~19 m/min
 const SPEED = {
-  stahl:     {t:[1,2,3,4,5,6,8,10,12,15,20,25], v:[8000,5000,3500,2800,2300,2000,1500,1200,950,700,450,300]},
-  edelstahl: {t:[1,2,3,4,5,6,8,10,12,15,20],    v:[9000,5500,3200,2200,1600,1200,700,450,300,200,130]},
-  alu:       {t:[1,2,3,4,5,6,8,10,12,15],       v:[9000,6000,4000,3000,2200,1700,1000,700,500,350]},
+  stahl:     {t:[1,2,3,4,5,6,8,10,12,15,20,25], v:[9500,7000,4800,4000,3300,2800,2000,1700,1400,1000,650,450]},
+  edelstahl: {t:[1,2,3,4,5,6,8,10,12,15,20],    v:[38000,19000,9500,5500,3800,2700,1500,950,650,400,250]},
+  alu:       {t:[1,2,3,4,5,6,8,10,12,15],       v:[32000,16000,9000,5000,3500,2500,1300,800,500,320]},
 };
 function speedGroup(m){ if(!m) return 'stahl'; if(m.startsWith('1.4')) return 'edelstahl'; if(m.startsWith('Al')) return 'alu'; return 'stahl'; }
 function speedFor(m,t){ const g=SPEED[speedGroup(m)],ts=g.t,vs=g.v; if(t<=ts[0])return vs[0]; if(t>=ts[ts.length-1])return vs[vs.length-1];
@@ -70,21 +71,20 @@ function unitVkAt(p,Q){ const c=calc(p); const sk=c.varUnit + c.fixPos/Math.max(
 const grandTotal=()=>PARTS.reduce((a,p)=>a+calc(p).position,0);
 const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
+// Laserzeit-Schätzung (min) aus Schneidlänge + Einstichen (DXF & STEP)
+function estimateLaserMin(p){
+  const v=speedFor(p.material,p.dicke||1);
+  const beam=(p.cutlen_mm||0)/Math.max(150,v);              // Beam-on (min)
+  const pierce=(p.einstech||0)*pierceTime(p.dicke||1)/60;   // Einstechzeit
+  const rapid=beam*0.10;                                    // Eilgang ~10%
+  return +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
+}
 // CAD-Teile: Gewicht (und ggf. Laserzeit) aus Geometrie neu berechnen
 function recomputeCad(p){
   const d=density(p.material);
-  if(p.source==='dxf'){
-    p.gewicht = +(p.area_m2 * (p.dicke/1000) * d).toFixed(3);
-    if(p._autoLaser){
-      const v=speedFor(p.material,p.dicke||1);
-      const beam=p.cutlen_mm/Math.max(150,v);                 // Beam-on (min)
-      const pierce=(p.einstech||0)*pierceTime(p.dicke||1)/60;  // Einstechzeit
-      const rapid=beam*0.10;                                   // Eilgang ~10%
-      p.laser_min = +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
-    }
-  }else if(p.source==='step'){
-    p.gewicht = +(p.vol_m3 * d).toFixed(3);
-  }
+  if(p.source==='dxf')      p.gewicht = +(p.area_m2 * (p.dicke/1000) * d).toFixed(3);
+  else if(p.source==='step') p.gewicht = +(p.vol_m3 * d).toFixed(3);
+  if(p._autoLaser) p.laser_min = estimateLaserMin(p);
 }
 
 // ---------- Datei-Routing ----------
@@ -239,9 +239,14 @@ async function loadStep(buf,name){
     if(thRaw>dims[0]) thRaw=dims[0];
     const dicke = snapThickness(thRaw);
     const bends=detectBends(meshes);
+    // Schneidlänge aus Geometrie: Rand (Umfang × Dicke) = Oberfläche − 2·Blechfläche
+    const blank = dicke>0 ? vol/dicke : 0;            // mm² Blechfläche (≈ V/t)
+    let cutlen = dicke>0 ? (area - 2*blank)/dicke : 0; // mm Umfang inkl. Löcher
+    if(!(cutlen>0)) cutlen=0;
     const p={ teilenr:name.replace(/\.(stp|step)$/i,''), source:'step', quelle:name, material:'1.4301',
-      dicke, menge:1, biegungen:bends, _autoBends:true, gewicht:0, einstech:0, auftrag:'',
-      vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims}, step:meshes, laser_min:0, _autoLaser:false };
+      dicke, menge:1, biegungen:bends, _autoBends:true, gewicht:0, einstech:1, auftrag:'',
+      cutlen_mm:cutlen, vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims},
+      step:meshes, laser_min:0, _autoLaser:true };
     recomputeCad(p); PARTS.push(p);
     toast(`STEP: ${p.teilenr} · ${fmt(dims[2],0)}×${fmt(dims[1],0)}×${fmt(dims[0],1)} mm · ${bends} Biegung(en) erkannt`);
   } finally { hideLoad(); }
@@ -297,7 +302,7 @@ function renderPositions(){
     const c=calc(p);
     const matOpts=Object.keys(MATERIAL).sort().map(m=>`<option ${m===p.material?'selected':''}>${m}</option>`).join('')+(p.material in MATERIAL?'':`<option selected>${p.material}</option>`);
     const badge=`<span class="srcbadge ${p.source}">${p.source}</span>`;
-    const sub = p.source==='step' ? `${fmt(p.gewicht,2)} kg · 3D-Körper`
+    const sub = p.source==='step' ? `${fmt(p.gewicht,2)} kg · ${fmt(p.cutlen_mm||0,0)} mm · ${fmt(p.laser_min,2)} min · 3D`
       : p.source==='dxf' ? `${fmt(p.gewicht,2)} kg · ${fmt(p.cutlen_mm,0)} mm · ${fmt(p.laser_min,2)} min`
       : `${fmt(p.gewicht,2)} kg · ${fmt(p.laser_min,2)} min${p.auftrag?' · '+p.auftrag:''}`;
     const viewBtn = (p.source==='step'||p.source==='dxf') ? `<button class="vbtn" data-view="${i}">👁 Ansehen</button>` : '';
