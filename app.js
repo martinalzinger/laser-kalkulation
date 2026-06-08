@@ -211,7 +211,7 @@ function recalc(){ $('#bPos').textContent=PARTS.length; $('#bStk').textContent=t
 
 // ---------- CAD-Viewer ----------
 let _three=null;
-function closeViewer(){ const v=$('#viewer'); if(v){ if(_three){cancelAnimationFrame(_three.raf); _three.renderer.dispose(); _three=null;} v.remove(); } }
+function closeViewer(){ const v=$('#viewer'); if(v){ if(_three){cancelAnimationFrame(_three.raf); if(_three.onResize)window.removeEventListener('resize',_three.onResize); _three.renderer.dispose(); _three=null;} v.remove(); } }
 function openViewer(i){
   const p=PARTS[i]; if(!p) return;
   const v=document.createElement('div'); v.id='viewer'; v.className='viewer';
@@ -262,40 +262,58 @@ function renderDxfView(body,p){
 }
 
 function renderStepView(body,p){
-  const W=body.clientWidth||800,H=body.clientHeight||600;
+  const rect=body.getBoundingClientRect();
+  let W=Math.max(40,Math.round(rect.width)), H=Math.max(40,Math.round(rect.height));
   const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
   renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1)); renderer.setSize(W,H);
+  renderer.domElement.style.touchAction='none';
   body.insertBefore(renderer.domElement,body.firstChild);
   const scene=new THREE.Scene();
-  const cam=new THREE.PerspectiveCamera(45,W/H,0.1,1e6);
-  scene.add(new THREE.AmbientLight(0xffffff,0.65));
-  const d1=new THREE.DirectionalLight(0xffffff,0.8); d1.position.set(1,1,1); scene.add(d1);
-  const d2=new THREE.DirectionalLight(0xffffff,0.4); d2.position.set(-1,-0.5,-1); scene.add(d2);
+  const cam=new THREE.PerspectiveCamera(45,W/H,0.01,1e7);
+  // gleichmäßige Ausleuchtung (kein schwarzes Modell)
+  scene.add(new THREE.AmbientLight(0xffffff,0.55));
+  scene.add(new THREE.HemisphereLight(0xffffff,0x6b7079,0.9));
+  const d1=new THREE.DirectionalLight(0xffffff,0.85); d1.position.set(1,1.4,1.2); scene.add(d1);
+  const d2=new THREE.DirectionalLight(0xffffff,0.5);  d2.position.set(-1.2,-0.4,-1); scene.add(d2);
+  const d3=new THREE.DirectionalLight(0xffffff,0.35); d3.position.set(0.2,-1,0.6); scene.add(d3);
   const grp=new THREE.Group();
   p.step.forEach(m=>{
     const geo=new THREE.BufferGeometry();
     geo.setAttribute('position',new THREE.BufferAttribute(m.pos,3));
     if(m.idx) geo.setIndex(new THREE.BufferAttribute(m.idx,1));
     geo.computeVertexNormals();
-    const col=m.color?new THREE.Color(m.color[0],m.color[1],m.color[2]):new THREE.Color(0x9aa3ad);
-    const mat=new THREE.MeshStandardMaterial({color:col,metalness:.55,roughness:.5,side:THREE.DoubleSide});
+    // STEP-Farbe nur nutzen, wenn vorhanden und nicht (fast) schwarz – sonst Stahl-Grau
+    const hasCol=m.color && (m.color[0]+m.color[1]+m.color[2])>0.12;
+    const col=hasCol?new THREE.Color(m.color[0],m.color[1],m.color[2]):new THREE.Color(0xb4bac1);
+    const mat=new THREE.MeshStandardMaterial({color:col,metalness:0.18,roughness:0.62,side:THREE.DoubleSide});
     grp.add(new THREE.Mesh(geo,mat));
   });
   const box=new THREE.Box3().setFromObject(grp); const ctr=box.getCenter(new THREE.Vector3()); const sz=box.getSize(new THREE.Vector3());
   grp.position.sub(ctr); scene.add(grp);
-  const maxD=Math.max(sz.x,sz.y,sz.z)||100; cam.position.set(maxD*1.1,maxD*0.9,maxD*1.4); cam.lookAt(0,0,0);
-  const controls=new THREE.OrbitControls(cam,renderer.domElement); controls.enableDamping=true;
+  const radius=Math.max(sz.x,sz.y,sz.z,1)*0.5;
+  const fitDist=radius/Math.sin((cam.fov*Math.PI/180)/2)*1.25;
+  const home=new THREE.Vector3(fitDist*0.6,fitDist*0.5,fitDist*0.8);
+  cam.near=fitDist/100; cam.far=fitDist*100; cam.updateProjectionMatrix();
+  cam.position.copy(home); cam.lookAt(0,0,0);
+  const controls=new THREE.OrbitControls(cam,renderer.domElement);
+  controls.enableDamping=true; controls.dampingFactor=0.09; controls.target.set(0,0,0);
+  controls.rotateSpeed=0.9; controls.zoomSpeed=1.0; controls.update();
   let wire=false;
+  const setCam=(x,y,z)=>{cam.position.set(x,y,z);controls.target.set(0,0,0);controls.update();};
+  _three={renderer,raf:0,scene,cam};
   const loop=()=>{ _three.raf=requestAnimationFrame(loop); controls.update(); renderer.render(scene,cam); };
-  _three={renderer,raf:0};
-  addTools(body,[['Reset',()=>{cam.position.set(maxD*1.1,maxD*0.9,maxD*1.4);controls.target.set(0,0,0);}],
+  addTools(body,[
+    ['Reset',()=>setCam(home.x,home.y,home.z)],
     ['Drahtgitter',()=>{wire=!wire;grp.traverse(o=>{if(o.material)o.material.wireframe=wire;});}],
-    ['Vorne',()=>{cam.position.set(0,0,maxD*1.8);controls.target.set(0,0,0);}],
-    ['Oben',()=>{cam.position.set(0,maxD*1.8,0.001);controls.target.set(0,0,0);}]]);
-  body.insertAdjacentHTML('beforeend','<div class="viewer-hint">STEP · ziehen zum Drehen · Rad zum Zoomen</div>');
+    ['Vorne',()=>setCam(0,0,fitDist)],
+    ['Oben',()=>setCam(0,fitDist,0.001)],
+    ['Seite',()=>setCam(fitDist,0,0)]]);
+  body.insertAdjacentHTML('beforeend','<div class="viewer-hint">STEP · ziehen zum Drehen · Rad zum Zoomen · rechte Maustaste zum Verschieben</div>');
   loop();
-  const onResize=()=>{const w=body.clientWidth,h=body.clientHeight;cam.aspect=w/h;cam.updateProjectionMatrix();renderer.setSize(w,h);};
-  window.addEventListener('resize',onResize);
+  const onResize=()=>{const r=body.getBoundingClientRect();const w=Math.max(40,r.width),h=Math.max(40,r.height);cam.aspect=w/h;cam.updateProjectionMatrix();renderer.setSize(w,h);};
+  _three.onResize=onResize; window.addEventListener('resize',onResize);
+  // nach Layout-Settling einmal korrekt nachziehen
+  requestAnimationFrame(onResize); setTimeout(onResize,120);
 }
 function addTools(body,btns){
   const t=document.createElement('div'); t.className='viewer-tools';
@@ -400,6 +418,7 @@ function exportCsv(){
 $('#d_datum').value=new Date().toLocaleDateString('de-DE');
 $('#drop').onclick=()=>$('#fileInput').click();
 $('#reload').onclick=()=>$('#fileInput').click();
+$('#addFile').onclick=()=>$('#fileInput').click();
 $('#fileInput').onchange=e=>{handleFiles(e.target.files);e.target.value='';};
 ['dragover','dragenter'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.remove('over');}));
