@@ -657,47 +657,55 @@ function renderPositions(){
 function recalc(){ $('#bPos').textContent=PARTS.length; $('#bStk').textContent=totalStk(); $('#bTotal').textContent=eur(grandTotal()); }
 
 // Schachtelung visualisieren (Blechtafeln mit Teilen)
+const NEST_COLORS=['#c00000','#1f6feb','#15803d','#a28231','#7c3aed','#0d9488','#b45309','#be185d'];
+function buildSheetSvg(g,sh,si,W){
+  const H=W*SHEET_H/SHEET_W, sx=W/SHEET_W, sy=H/SHEET_H;
+  const cut=(si===g.nSheets-1 && sh._cut)?sh._cut:null;
+  const fs=Math.max(7, W/42);   // Schriftgröße skaliert mit Tafelgröße
+  let rects='';
+  const draw=(pi,x,y,wm,hm,rot,op,sw)=>{ const col=NEST_COLORS[pi%NEST_COLORS.length], pp=PARTS[pi];
+    const X=x*sx,Y=y*sy,Wp=wm*sx,Hp=hm*sy;
+    if(pp&&pp.contourNorm&&!rot) rects+=`<path d="${pp.contourNorm}" transform="translate(${X.toFixed(1)},${Y.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    else rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp-0.6).toFixed(1)}" height="${Math.max(1,Hp-0.6).toFixed(1)}" fill="${col}" fill-opacity="${op}" stroke="${col}" stroke-width="0.7"/>`;
+    if(Wp>fs*1.6&&Hp>fs*1.3) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+fs/3).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle" fill="${col}" font-family="monospace">${PARTS[pi]?(PARTS[pi]._lbl||''):''}</text>`;
+  };
+  sh.rects.forEach(r=>{ PARTS[r.pi]._lbl=r.label; draw(r.pi, r.x, r.y, Math.max(1,r.w-g.gap), Math.max(1,r.h-g.gap), r.rot, 0.20, 0.9); });
+  (sh.nested||[]).forEach(nz=>{ PARTS[nz.pi]._lbl=nz.label; draw(nz.pi, nz.x, nz.y, nz.w, nz.h, false, 0.38, 1.1); });
+  let restLabel=''; const lf=Math.max(7,W/55);
+  if(cut){ if(cut.dir==='x'){ const cx=cut.at*sx; restLabel=`<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="#16181a" stroke-width="1" stroke-dasharray="4 3"/><text x="${(cx+(W-cx)/2).toFixed(1)}" y="${(H/2).toFixed(1)}" font-size="${lf.toFixed(1)}" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; }
+    else { const cy=cut.at*sy; restLabel=`<line x1="0" y1="${cy.toFixed(1)}" x2="${W}" y2="${cy.toFixed(1)}" stroke="#16181a" stroke-width="1" stroke-dasharray="4 3"/><text x="${(W/2).toFixed(1)}" y="${(cy+(H-cy)/2).toFixed(1)}" font-size="${lf.toFixed(1)}" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; } }
+  return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H.toFixed(0)}"><rect x="0" y="0" width="${W}" height="${H.toFixed(1)}" fill="#fff" stroke="#c9c4ba" stroke-width="1"/>${rects}${restLabel}</svg>`;
+}
 function renderNesting(){
   const area=$('#nestArea'), box=$('#nestBox'); if(!area||!box) return;
   const groups=NEST_RESULT||[];
   if(!groups.length){ area.style.display='none'; box.innerHTML=''; return; }
-  area.style.display='block';
-  $('#restCharge').checked=RESTTAFEL_CHARGE;
-  const colors=['#c00000','#1f6feb','#15803d','#a28231','#7c3aed','#0d9488','#b45309','#be185d'];
+  area.style.display='block'; $('#restCharge').checked=RESTTAFEL_CHARGE;
   let html='';
-  for(const g of groups){
+  groups.forEach((g,gi)=>{
     html+=`<div class="nestgroup"><div class="ngh">${g.material} · ${fmt(g.dicke,2)} mm`+
       `<span class="ngmeta">${g.items} Teile · ${g.nSheets} Tafel(n) · Ausnutzung ${fmt(g.util*100,0)} % · Abstand ${g.gap} mm${g.nested?' · '+g.nested+' in Löchern geschachtelt':''} · ${eur(g.groupMatCost)} Material</span></div><div class="ngsheets">`;
-    g.sheets.forEach((sh,si)=>{
-      const W=300, H=W*SHEET_H/SHEET_W, sx=W/SHEET_W, sy=H/SHEET_H;
-      const isLast=si===g.nSheets-1;
-      const cut = (isLast && sh._cut) ? sh._cut : null;
-      let rects='';
-      sh.rects.forEach(r=>{ const col=colors[(r.pi)%colors.length]; const pp=PARTS[r.pi];
-        const pw=Math.max(1,r.w-g.gap), ph=Math.max(1,r.h-g.gap);   // Teilegröße ohne Abstand
-        const X=r.x*sx, Y=r.y*sy, Wp=pw*sx, Hp=ph*sy;
-        if(pp && pp.contourNorm && !r.rot){
-          rects+=`<path d="${pp.contourNorm}" transform="translate(${X.toFixed(1)},${Y.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="0.20" fill-rule="evenodd" stroke="${col}" stroke-width="0.9" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-        } else {
-          rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp-0.6).toFixed(1)}" height="${Math.max(1,Hp-0.6).toFixed(1)}" fill="${col}" fill-opacity="0.20" stroke="${col}" stroke-width="0.7"/>`;
-        }
-        if(Wp>16&&Hp>11) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${r.label}</text>`;
-      });
-      (sh.nested||[]).forEach(nz=>{ const col=colors[(nz.pi)%colors.length]; const pp=PARTS[nz.pi];
-        const X=nz.x*sx, Y=nz.y*sy, Wp=nz.w*sx, Hp=nz.h*sy;
-        if(pp&&pp.contourNorm) rects+=`<path d="${pp.contourNorm}" transform="translate(${X.toFixed(1)},${Y.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="0.38" fill-rule="evenodd" stroke="${col}" stroke-width="1.1" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-        else rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp).toFixed(1)}" height="${Math.max(1,Hp).toFixed(1)}" fill="${col}" fill-opacity="0.38" stroke="${col}" stroke-width="0.8"/>`;
-        if(Wp>16&&Hp>11) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${nz.label}</text>`;
-      });
-      let restLabel='';
-      if(cut){ if(cut.dir==='x'){ const cx=cut.at*sx; restLabel=`<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="#16181a" stroke-width="1" stroke-dasharray="3 2"/><text x="${(cx+(W-cx)/2).toFixed(1)}" y="${(H/2).toFixed(1)}" font-size="7" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; }
-        else { const cy=cut.at*sy; restLabel=`<line x1="0" y1="${cy.toFixed(1)}" x2="${W}" y2="${cy.toFixed(1)}" stroke="#16181a" stroke-width="1" stroke-dasharray="3 2"/><text x="${(W/2).toFixed(1)}" y="${(cy+(H-cy)/2+3).toFixed(1)}" font-size="7" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; } }
-      html+=`<div class="nsheet"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff" stroke="#c9c4ba" stroke-width="1"/>${rects}${restLabel}</svg>`+
-        `<div class="nscap">Tafel ${si+1} · ${fmt(sh.usedArea/(SHEET_W*SHEET_H)*100,0)} %${cut?' · Trennschnitt':''}</div></div>`;
+    g.sheets.forEach((sh,si)=>{ const cut=(si===g.nSheets-1&&sh._cut)?sh._cut:null;
+      html+=`<div class="nsheet" data-g="${gi}" data-s="${si}" title="Zum Vergrößern klicken">${buildSheetSvg(g,sh,si,300)}`+
+        `<div class="nscap">Tafel ${si+1} · ${fmt(sh.usedArea/(SHEET_W*SHEET_H)*100,0)} %${cut?' · Trennschnitt':''} · 🔍 vergrößern</div></div>`;
     });
     html+=`</div></div>`;
-  }
+  });
   box.innerHTML=html;
+  box.querySelectorAll('.nsheet').forEach(el=>{ el.style.cursor='zoom-in'; el.onclick=()=>openSheetModal(+el.dataset.g,+el.dataset.s); });
+}
+function openSheetModal(gi,si){
+  const g=(NEST_RESULT||[])[gi]; if(!g) return; const sh=g.sheets[si]; if(!sh) return;
+  const W=Math.min(Math.max(600,window.innerWidth-60), 1280);
+  const teile=sh.rects.length+(sh.nested?sh.nested.length:0);
+  const m=document.createElement('div'); m.className='viewer'; m.id='sheetModal';
+  m.innerHTML=`<div class="viewer-card" style="width:auto;max-width:97vw;height:auto;max-height:95vh">
+    <div class="viewer-h"><h3>Tafel ${si+1} · ${g.material} · ${fmt(g.dicke,2)} mm</h3>
+      <span class="meta">3000 × 1500 mm · ${teile} Teile · Belegung ${fmt(sh.usedArea/(SHEET_W*SHEET_H)*100,0)} %</span>
+      <button class="x">✕</button></div>
+    <div class="viewer-body" style="background:#eceef0;padding:16px;overflow:auto;display:block">${buildSheetSvg(g,sh,si,W)}</div></div>`;
+  document.body.appendChild(m);
+  m.querySelector('.x').onclick=()=>m.remove(); m.onclick=e=>{ if(e.target===m) m.remove(); };
 }
 
 // ---------- CAD-Viewer ----------
@@ -941,7 +949,7 @@ $('#drawerClose').onclick=()=>toggleDrawer(false);
 $('#drawerOv').onclick=()=>toggleDrawer(false);
 $('#btnCsv').onclick=exportCsv;
 $('#btnAngebot').onclick=()=>{ if(!PARTS.length){toast('Erst Dateien laden.');return;} openAngebot(); };
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeViewer(); $('#angebot')?.remove(); toggleDrawer(false); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeViewer(); $('#angebot')?.remove(); $('#sheetModal')?.remove(); toggleDrawer(false); } });
 loadSettings();
 bindParams();
 window.__loadUrl=async url=>{const b=await(await fetch(url)).arrayBuffer();await loadPlan(b,url.split('/').pop());showWork();renderPositions();recalc();};
