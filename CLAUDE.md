@@ -26,9 +26,11 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   (`p._nestRect`). Sonst würde der Packer das schmale gebogene Profil sehen, zu viele Teile auf die Tafel
   legen → zu wenige Tafeln → zu billig. Flache Teile (DXF, ungebogenes STEP) behalten ihre echte Kontur
   (Verzahnung). Die Tafel-Belegung wird zusätzlich hart auf **100 %** gedeckelt.
-  **Gezeichnet** werden Biegeteile als ihre **größte zusammenhängende flache Fläche** mit echten Ausschnitten
-  (`dominantFaceFlat`→`p._flatNorm`, unverzerrt mittig im Slot) – nicht die wirre 3D-Projektion. Zeigt das
-  Hauptblech sauber; Ausschnitte auf weiteren Schenkeln (Voll-Abwicklung) sind nicht enthalten.
+  **Gezeichnet** (`p._flatNorm`, unverzerrt mittig im Slot): erst **echte Abwicklung gerollter/gebogener
+  Teile** (`unrollCylindrical` – Außenhaut über den Querschnitt-Bogen aufrollen, alle Ausschnitte, gegen
+  Blechfläche geprüft; z. B. 0011813_1 → 1462×334 mm, 25 Löcher, 99 % Treffer), sonst **größte
+  zusammenhängende flache Fläche** (`dominantFaceFlat`). Bei nicht-zylindrischen Bügeln zeigt der Fallback
+  nur das Hauptblech (Voll-Abwicklung verzweigter Teile nicht umgesetzt).
   **Hinweis:** STEP = nur 3D-Geometrie → Biegungszahl (`detectBends`) und Abwicklung sind **Schätzungen**;
   exakt nur via Biegeprogramm (JUPIDU/HTML) bzw. DXF-Zuschnitt.
 - **Walzrichtung je Teil:** Pro Position wählbar (`p.walz`: `egal`/`laengs`/`quer`) – beliebig = freie Winkel,

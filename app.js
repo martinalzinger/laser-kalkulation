@@ -272,6 +272,49 @@ function dominantFaceFlat(meshes,n){
   return {path:d, w, h, loops:loops.length};
  }catch(e){ console.warn('flatface',e); return null; }
 }
+// Abwicklung eines um EINE Achse gebogenen/gerollten Teils (Profil, Rinne, Zylinderschale):
+// Außenhaut über den Querschnitt-Bogen aufrollen → (Länge, Bogenlänge) mit allen Ausschnitten.
+// Validierung gegen die echte Blechfläche; gibt null, wenn das Modell nicht passt.
+function unrollCylindrical(meshes, dicke, blankArea){
+ try{
+  let mn=[1e18,1e18,1e18],mx=[-1e18,-1e18,-1e18];
+  for(const m of meshes){const p=m.pos;for(let i=0;i<p.length;i+=3)for(let k=0;k<3;k++){const v=p[i+k];if(v<mn[k])mn[k]=v;if(v>mx[k])mx[k]=v;}}
+  const ext=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]];
+  const AL=ext[0]>=ext[1]&&ext[0]>=ext[2]?0:(ext[1]>=ext[2]?1:2);     // Längsachse
+  const A=[0,1,2].filter(k=>k!==AL);                                   // Querschnitt-Achsen
+  let su=0,sv=0,cnt=0;
+  for(const m of meshes){const p=m.pos;for(let i=0;i<p.length;i+=3){su+=p[i+A[0]];sv+=p[i+A[1]];cnt++;}}
+  const Cu=su/cnt, Cv=sv/cnt;                                          // Querschnitt-Schwerpunkt
+  const g=(p,i)=>[p[i*3],p[i*3+1],p[i*3+2]];
+  const tris=[]; let rsum=0,rn=0;
+  for(const m of meshes){const pos=m.pos,idx=m.idx;if(!idx)continue;
+    for(let t=0;t<idx.length;t+=3){const a=g(pos,idx[t]),b=g(pos,idx[t+1]),c=g(pos,idx[t+2]);
+      let nx=(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),ny=(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),nz=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+      const L=Math.hypot(nx,ny,nz);if(L<1e-9)continue; const nn=[nx,ny,nz];
+      const mu=(a[A[0]]+b[A[0]]+c[A[0]])/3-Cu, mv=(a[A[1]]+b[A[1]]+c[A[1]])/3-Cv, rl=Math.hypot(mu,mv)||1;
+      const dotR=(nn[A[0]]*mu+nn[A[1]]*mv)/(L*rl);
+      if(dotR<0.3) continue;                                           // nur klar nach außen zeigende Außenhaut
+      rsum+=rl; rn++; tris.push([a,b,c]);
+    }}
+  if(tris.length<10) return null;
+  const R=rsum/rn;
+  const ang=P=>Math.atan2(P[A[1]]-Cv, P[A[0]]-Cu);
+  const allTh=[]; for(const tr of tris)for(const P of tr)allTh.push(ang(P));
+  allTh.sort((x,y)=>x-y);
+  let gap=-1,gapAt=allTh[0]; for(let i=1;i<allTh.length;i++){const d=allTh[i]-allTh[i-1];if(d>gap){gap=d;gapAt=allTh[i];}}
+  const wrapGap=(allTh[0]+2*Math.PI)-allTh[allTh.length-1]; if(wrapGap>gap){gap=wrapGap;gapAt=allTh[0];}
+  const th0=gapAt; const norm=th=>{let d=th-th0; while(d<0)d+=2*Math.PI; while(d>=2*Math.PI)d-=2*Math.PI; return d;};
+  const map=P=>({x:P[AL], y:norm(ang(P))*R});
+  const loops=loops2D(tris.map(tr=>({a:map(tr[0]),b:map(tr[1]),c:map(tr[2])}))); if(!loops.length) return null;
+  let mnx=1e18,mny=1e18,mxx=-1e18,mxy=-1e18;
+  loops.forEach(lp=>lp.forEach(p=>{if(p.x<mnx)mnx=p.x;if(p.y<mny)mny=p.y;if(p.x>mxx)mxx=p.x;if(p.y>mxy)mxy=p.y;}));
+  const w=mxx-mnx||1,h=mxy-mny||1;
+  if(blankArea>0){ const ratio=(w*h)/blankArea; if(ratio<0.6||ratio>1.8) return null; }   // muss zur Blechfläche passen
+  loops.sort((a,b)=>shoelace(b)-shoelace(a));
+  let d=''; loops.forEach(lp=>{lp.forEach((p,i)=>{d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' ';});d+='Z ';});
+  return {path:d, w, h, R:Math.round(R), loops:loops.length, devW:Math.round(h)};
+ }catch(e){ console.warn('unroll',e); return null; }
+}
 // Skyline-Packer (bottom-left) – füllt freie Flächen dicht, große Teile zuerst, kleine in die Lücken
 function packSheets(items, sheetW, sheetH){
   const list=items.slice().sort((a,b)=> (b.w*b.h)-(a.w*a.h) || b.h-a.h);
@@ -711,7 +754,11 @@ async function loadStep(buf,name){
       cutlen_mm:cutlen, vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims},
       step:meshes, laser_min:0, _autoLaser:true };
     const _sc=stepContourNorm(meshes,nrm); p.contourNorm=_sc.path; p.holes=_sc.holes;
-    const _ff=dominantFaceFlat(meshes,nrm); if(_ff&&_ff.w>0&&_ff.h>0){ p._flatNorm=_ff.path; p._flatW=_ff.w; p._flatH=_ff.h; }
+    // Abwicklung für die Tafel-Darstellung: erst Zylinder-/Roll-Abwicklung (volle Kontur + alle Ausschnitte,
+    // gegen die Blechfläche geprüft), sonst größte flache Fläche. Nur Darstellung; Preis bleibt das Rechteck.
+    const _blankA = dicke>0 ? (vol/dicke) : 0;
+    const _fl = unrollCylindrical(meshes, dicke, _blankA) || dominantFaceFlat(meshes, nrm);
+    if(_fl && _fl.w>0 && _fl.h>0){ p._flatNorm=_fl.path; p._flatW=_fl.w; p._flatH=_fl.h; }
     recomputeCad(p); PARTS.push(p);
     toast(`STEP: ${p.teilenr} · ${fmt(dims[0],1)} mm · ${matRaw?('Werkstoff '+p.material):'kein Werkstoff in Datei → '+p.material}· ${bends} Biegung(en)`);
   } finally { hideLoad(); }
