@@ -272,6 +272,19 @@ function dominantFaceFlat(meshes,n){
   return {path:d, w, h, loops:loops.length};
  }catch(e){ console.warn('flatface',e); return null; }
 }
+// Kreis-Fit (Kåsa) an 2D-Punkte [[x,y],...] → {cx,cy,R,res} (res = mittlere Radius-Abweichung)
+function fitCircle(pts){
+  const n=pts.length; if(n<3) return null;
+  let Sx=0,Sy=0,Sxx=0,Syy=0,Sxy=0,Sxz=0,Syz=0,Sz=0;
+  for(const p of pts){const x=p[0],y=p[1],z=x*x+y*y;Sx+=x;Sy+=y;Sxx+=x*x;Syy+=y*y;Sxy+=x*y;Sxz+=x*z;Syz+=y*z;Sz+=z;}
+  const M=[[Sxx,Sxy,Sx],[Sxy,Syy,Sy],[Sx,Sy,n]], Rr=[-Sxz,-Syz,-Sz];
+  const det3=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const D=det3(M); if(Math.abs(D)<1e-9) return null;
+  const col=c=>{const m=M.map(r=>r.slice());for(let i=0;i<3;i++)m[i][c]=Rr[i];return det3(m)/D;};
+  const a=col(0),b=col(1),cc=col(2); const cx=-a/2,cy=-b/2; const rr=cx*cx+cy*cy-cc; if(rr<=0) return null;
+  const R=Math.sqrt(rr); let res=0; for(const p of pts) res+=Math.abs(Math.hypot(p[0]-cx,p[1]-cy)-R); res/=n;
+  return {cx,cy,R,res};
+}
 // Abwicklung eines um EINE Achse gebogenen/gerollten Teils (Profil, Rinne, Zylinderschale):
 // Außenhaut über den Querschnitt-Bogen aufrollen → (Länge, Bogenlänge) mit allen Ausschnitten.
 // Validierung gegen die echte Blechfläche; gibt null, wenn das Modell nicht passt.
@@ -282,22 +295,23 @@ function unrollCylindrical(meshes, dicke, blankArea){
   const ext=[mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]];
   const AL=ext[0]>=ext[1]&&ext[0]>=ext[2]?0:(ext[1]>=ext[2]?1:2);     // Längsachse
   const A=[0,1,2].filter(k=>k!==AL);                                   // Querschnitt-Achsen
-  let su=0,sv=0,cnt=0;
-  for(const m of meshes){const p=m.pos;for(let i=0;i<p.length;i+=3){su+=p[i+A[0]];sv+=p[i+A[1]];cnt++;}}
-  const Cu=su/cnt, Cv=sv/cnt;                                          // Querschnitt-Schwerpunkt
   const g=(p,i)=>[p[i*3],p[i*3+1],p[i*3+2]];
-  const tris=[]; let rsum=0,rn=0;
+  // Kreis an den Querschnitt fitten → echter Bogenmittelpunkt + Radius (nicht Schwerpunkt!)
+  const cs=[]; for(const m of meshes){const p=m.pos;for(let i=0;i<p.length;i+=3)cs.push([p[i+A[0]],p[i+A[1]]]);}
+  const fit=fitCircle(cs); if(!fit) return null;
+  const Cu=fit.cx, Cv=fit.cy, R=fit.R;
+  if(R<=0 || fit.res/R>0.12) return null;                              // kein sauberer Bogen → kein Zylinderteil
+  const tris=[];
   for(const m of meshes){const pos=m.pos,idx=m.idx;if(!idx)continue;
     for(let t=0;t<idx.length;t+=3){const a=g(pos,idx[t]),b=g(pos,idx[t+1]),c=g(pos,idx[t+2]);
       let nx=(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),ny=(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),nz=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
       const L=Math.hypot(nx,ny,nz);if(L<1e-9)continue; const nn=[nx,ny,nz];
       const mu=(a[A[0]]+b[A[0]]+c[A[0]])/3-Cu, mv=(a[A[1]]+b[A[1]]+c[A[1]])/3-Cv, rl=Math.hypot(mu,mv)||1;
       const dotR=(nn[A[0]]*mu+nn[A[1]]*mv)/(L*rl);
-      if(dotR<0.3) continue;                                           // nur klar nach außen zeigende Außenhaut
-      rsum+=rl; rn++; tris.push([a,b,c]);
+      if(dotR<0.3) continue;                                           // nur Außenhaut (Normale radial nach außen)
+      tris.push([a,b,c]);
     }}
   if(tris.length<10) return null;
-  const R=rsum/rn;
   const ang=P=>Math.atan2(P[A[1]]-Cv, P[A[0]]-Cu);
   const allTh=[]; for(const tr of tris)for(const P of tr)allTh.push(ang(P));
   allTh.sort((x,y)=>x-y);
