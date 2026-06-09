@@ -56,6 +56,9 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
 
 - Hosting: **GitHub Pages**, Repo `alzingermaschinenbau/laser-kalkulation`, Branch `main`, Root.
   Live-URL: **https://alzingermaschinenbau.github.io/laser-kalkulation/**
+- **Cache-Busting:** In `index.html` sind `app.js?v=…` und `parser.js?v=…` versioniert. Bei **jedem
+  Deploy die Versionsnummer hochzählen** (z. B. `20260609b`→`20260609c`), sonst lädt der Browser/CDN evtl.
+  die alte Datei trotz `Strg`+`F5`.
 - Veröffentlichen: Änderungen committen und `git push origin main`. GitHub Pages baut automatisch
   (~1–2 min). Danach prüfen, dass die Datei live ist, und im Browser `Strg`+`F5`.
   Alternativ Doppelklick auf `Start_Laser-Kalkulation.bat` (committet + pusht automatisch).
