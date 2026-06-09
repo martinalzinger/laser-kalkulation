@@ -121,20 +121,25 @@ function footprint(p){
 function flattenArc(c,r,a0,a1,seg){ const pts=[]; let da=a1-a0; if(da<0)da+=2*Math.PI; const n=Math.max(seg,Math.ceil(da/(Math.PI/12)));
   for(let i=0;i<=n;i++){ const a=a0+da*i/n; pts.push({x:c.x+r*Math.cos(a),y:c.y+r*Math.sin(a)}); } return pts; }
 function dxfContourNorm(draw,bbox){
-  const {minX,maxY,w,h}=bbox; if(!(w>0)||!(h>0)) return '';
-  const nx=x=>((x-minX)/w).toFixed(4), ny=y=>((maxY-y)/h).toFixed(4); // y nach unten kippen
-  let d='';
+  const {minX,maxY,w,h}=bbox; if(!(w>0)||!(h>0)) return {path:'',holes:[]};
+  const NX=x=>(x-minX)/w, NY=y=>(maxY-y)/h; // y nach unten kippen, [0,1]
+  let d=''; const loops=[];
   for(const e of draw){
     let pts=null, closed=false;
     if(e.t==='pl'){ pts=e.pts; closed=e.closed; }
     else if(e.t==='circle'){ pts=flattenArc(e.c,e.r,0,2*Math.PI,24); closed=true; }
     else if(e.t==='arc'){ pts=flattenArc(e.c,e.r,e.a0,e.a1,16); }
     if(!pts||!pts.length) continue;
-    d+='M'+nx(pts[0].x)+' '+ny(pts[0].y)+' ';
-    for(let i=1;i<pts.length;i++) d+='L'+nx(pts[i].x)+' '+ny(pts[i].y)+' ';
-    if(closed) d+='Z ';
+    d+='M'+NX(pts[0].x).toFixed(4)+' '+NY(pts[0].y).toFixed(4)+' ';
+    for(let i=1;i<pts.length;i++) d+='L'+NX(pts[i].x).toFixed(4)+' '+NY(pts[i].y).toFixed(4)+' ';
+    if(closed){ d+='Z ';
+      let a=1e9,b=1e9,cc=-1e9,dd=-1e9; pts.forEach(p=>{const X=NX(p.x),Y=NY(p.y); if(X<a)a=X;if(Y<b)b=Y;if(X>cc)cc=X;if(Y>dd)dd=Y;});
+      loops.push({x:a,y:b,w:cc-a,h:dd-b,area:(cc-a)*(dd-b)});
+    }
   }
-  return d;
+  loops.sort((p,q)=>q.area-p.area);
+  const holes=loops.slice(1).filter(l=>l.w>0.1&&l.h>0.1);
+  return {path:d, holes};
 }
 function convexHull(pts){ if(pts.length<3) return pts.slice();
   pts=pts.slice().sort((a,b)=>a.x-b.x||a.y-b.y);
@@ -185,20 +190,24 @@ function stepOutline(meshes,n){
   }
   if(!loops.length) return null;
   let mnx=1e18,mny=1e18,mxx=-1e18,mxy=-1e18; loops.forEach(lp=>lp.forEach(p=>{if(p.x<mnx)mnx=p.x;if(p.y<mny)mny=p.y;if(p.x>mxx)mxx=p.x;if(p.y>mxy)mxy=p.y;}));
-  const w=mxx-mnx||1,h=mxy-mny||1; let d='';
-  loops.forEach(lp=>{ lp.forEach((p,i)=>{ d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' '; }); d+='Z '; });
-  return d;
+  const w=mxx-mnx||1,h=mxy-mny||1; let d=''; const boxes=[];
+  loops.forEach(lp=>{ let a=1e9,b=1e9,cc=-1e9,dd=-1e9;
+    lp.forEach((p,i)=>{ const X=(p.x-mnx)/w, Y=(mxy-p.y)/h; d+=(i?'L':'M')+X.toFixed(4)+' '+Y.toFixed(4)+' '; if(X<a)a=X;if(Y<b)b=Y;if(X>cc)cc=X;if(Y>dd)dd=Y; });
+    d+='Z '; boxes.push({x:a,y:b,w:cc-a,h:dd-b,area:(cc-a)*(dd-b)}); });
+  boxes.sort((p,q)=>q.area-p.area);
+  const holes=boxes.slice(1).filter(l=>l.w>0.1&&l.h>0.1);
+  return {path:d, holes};
 }
 function stepContourNorm(meshes,n){
-  try{ const o=stepOutline(meshes,n); if(o && o.length>20) return o; }catch(e){ console.warn('outline',e); }
+  try{ const o=stepOutline(meshes,n); if(o && o.path && o.path.length>20) return o; }catch(e){ console.warn('outline',e); }
   const {u,v}=planeBasis(n); let total=0; meshes.forEach(m=>total+=m.pos.length/3);
   const step=Math.max(1,Math.floor(total/4000)); const pts=[]; let c=0;
   for(const m of meshes){ const pos=m.pos; for(let i=0;i<pos.length;i+=3){ if(c++%step) continue; pts.push({x:pos[i]*u.x+pos[i+1]*u.y+pos[i+2]*u.z, y:pos[i]*v.x+pos[i+1]*v.y+pos[i+2]*v.z}); } }
-  if(pts.length<3) return '';
+  if(pts.length<3) return {path:'',holes:[]};
   const hull=convexHull(pts); let mnx=1e18,mny=1e18,mxx=-1e18,mxy=-1e18;
   hull.forEach(p=>{if(p.x<mnx)mnx=p.x;if(p.y<mny)mny=p.y;if(p.x>mxx)mxx=p.x;if(p.y>mxy)mxy=p.y;});
   const w=mxx-mnx||1,h=mxy-mny||1; let d=''; hull.forEach((p,i)=>{ d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' '; });
-  return d+'Z';
+  return {path:d+'Z', holes:[]};
 }
 // Shelf-Packer (FFDH) mit Drehung – Rechtecke inkl. Abstand
 function packSheets(items, sheetW, sheetH){
@@ -206,22 +215,14 @@ function packSheets(items, sheetW, sheetH){
   const sheets=[]; let s=null;
   const newSheet=()=>{ s={rects:[],shelfY:0,shelfH:0,shelfX:0}; sheets.push(s); };
   newSheet();
+  const place=(it,x,y,w,h,rot)=>{ const si=sheets.length-1; s.rects.push({x,y,w,h,rot,label:it.label,pi:it.pi,it}); if(it){it._sheet=si;it._x=x;it._y=y;} };
   for(const it of list){
     let w=it.w, h=it.h, rot=false;
     if(w>sheetW && h<=sheetW){ const t=w; w=h; h=t; rot=true; }   // quer legen wenn zu lang
-    // in aktuelle Reihe?
-    if(s.shelfH>0 && s.shelfX+w<=sheetW){
-      s.rects.push({x:s.shelfX,y:s.shelfY,w,h,rot,label:it.label,pi:it.pi}); s.shelfX+=w; continue;
-    }
-    // neue Reihe auf aktuellem Blech?
+    if(s.shelfH>0 && s.shelfX+w<=sheetW){ place(it,s.shelfX,s.shelfY,w,h,rot); s.shelfX+=w; continue; }
     const ny=s.shelfH>0 ? s.shelfY+s.shelfH : 0;
-    if(ny+h<=sheetH){
-      s.shelfY=ny; s.shelfH=h; s.shelfX=0;
-      s.rects.push({x:0,y:ny,w,h,rot,label:it.label,pi:it.pi}); s.shelfX=w; continue;
-    }
-    // neues Blech
-    newSheet(); s.shelfH=h;
-    s.rects.push({x:0,y:0,w,h,rot,label:it.label,pi:it.pi}); s.shelfX=w;
+    if(ny+h<=sheetH){ s.shelfY=ny; s.shelfH=h; s.shelfX=0; place(it,0,ny,w,h,rot); s.shelfX=w; continue; }
+    newSheet(); s.shelfH=h; place(it,0,0,w,h,rot); s.shelfX=w;
   }
   for(const sh of sheets){
     sh.usedX=sh.rects.length?Math.max(...sh.rects.map(r=>r.x+r.w)):0;
@@ -242,12 +243,29 @@ function computeNesting(){
     groups[key].parts.push(p);
     const gap=Math.max(1, Math.round(p.dicke));
     const menge=Math.max(1,parseInt(p.menge)||1);
-    for(let k=0;k<menge;k++) groups[key].items.push({w:fp.w+gap, h:fp.h+gap, label:(i+1)+'', pi:i});
+    const holesMM=(p.holes||[]).map(h=>({x:h.x*fp.w, y:h.y*fp.h, w:h.w*fp.w, h:h.h*fp.h})); // Löcher in mm (rel. Footprint-Ecke)
+    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM});
   });
   const out=[];
   for(const key in groups){
     const g=groups[key]; const gap=Math.max(1, Math.round(g.dicke));
-    const sheets=packSheets(g.items, SHEET_W, SHEET_H);
+    // --- Loch-Schachtelung: kleine Teile in Löcher größerer legen ---
+    const insts=g.items.slice().sort((a,b)=>b.area-a.area);
+    const availHoles=[]; const packList=[]; const nestedItems=[];
+    for(const inst of insts){ inst._host=null; inst._holeOff=null;
+      let placed=false;
+      for(const hole of availHoles){ if(hole.used) continue;
+        if(inst.w<=hole.w && inst.h<=hole.h){ hole.used=true; inst._host=hole.owner;
+          inst._holeOff={dx:hole.x+(hole.w-inst.fpw)/2, dy:hole.y+(hole.h-inst.fph)/2}; placed=true; break; } }
+      if(placed){ nestedItems.push(inst); }
+      else { packList.push(inst);
+        (inst.holes||[]).forEach(h=>{ if(h.w>=30&&h.h>=30) availHoles.push({owner:inst,x:h.x,y:h.y,w:h.w,h:h.h,used:false}); }); }
+    }
+    const sheets=packSheets(packList, SHEET_W, SHEET_H);
+    // genestete Teile aufs Blech ihres Hosts setzen (Darstellung + Ausnutzung)
+    for(const inst of nestedItems){ const host=inst._host; if(host && host._sheet!=null && sheets[host._sheet]){ const sh=sheets[host._sheet];
+      (sh.nested=sh.nested||[]).push({pi:inst.pi, label:inst.label, x:host._x+inst._holeOff.dx, y:host._y+inst._holeOff.dy, w:inst.fpw, h:inst.fph});
+      sh.usedArea+=inst.fpw*inst.fph; } }
     const nSheets=sheets.length;
     const last=sheets[nSheets-1];
     // Resttafel: Trennschnitt in die Richtung, die den größeren (nicht verrechneten) Rest lässt
@@ -266,7 +284,7 @@ function computeNesting(){
     g.parts.forEach(p=>{ p._matkUnit = totW>0 ? groupMatCost*p.gewicht/totW : 0; });
     const usedArea=sheets.reduce((a,s)=>a+s.usedArea,0);
     const util= nSheets>0 ? usedArea/(nSheets*SHEET_W*SHEET_H) : 0;
-    out.push({key, material:g.material, dicke:g.dicke, gap, sheets, nSheets, chargedSheets, sheetWeight, groupMatCost, util, parts:g.parts.length, items:g.items.length});
+    out.push({key, material:g.material, dicke:g.dicke, gap, sheets, nSheets, chargedSheets, sheetWeight, groupMatCost, util, parts:g.parts.length, items:g.items.length, nested:nestedItems.length});
   }
   NEST_RESULT=out;
   return out;
@@ -355,7 +373,8 @@ async function loadDxf(text,name){
   if(!g){ toast('DXF konnte nicht gelesen werden: '+name); return; }
   const p={ teilenr:name.replace(/\.dxf$/i,''), source:'dxf', quelle:name, material:'1.4301 V2A',
     dicke:2, menge:1, biegungen:0, gewicht:0, einstech:g.pierces, auftrag:'',
-    area_m2:g.area_m2, cutlen_mm:g.cutlen_mm, bbox:g.bbox, dxf:g.draw, contourNorm:dxfContourNorm(g.draw,g.bbox), laser_min:0, _autoLaser:true };
+    area_m2:g.area_m2, cutlen_mm:g.cutlen_mm, bbox:g.bbox, dxf:g.draw, laser_min:0, _autoLaser:true };
+  const _dc=dxfContourNorm(g.draw,g.bbox); p.contourNorm=_dc.path; p.holes=_dc.holes;
   recomputeCad(p); PARTS.push(p);
   toast(`DXF übernommen: ${p.teilenr} · ${fmt(g.bbox.w,0)}×${fmt(g.bbox.h,0)} mm`);
 }
@@ -459,8 +478,8 @@ async function loadStep(buf,name){
     const p={ teilenr:name.replace(/\.(stp|step)$/i,''), source:'step', quelle:name, material,
       dicke, menge:1, biegungen:bends, _autoBends:true, gewicht:0, einstech:1, auftrag:'',
       cutlen_mm:cutlen, vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims},
-      contourNorm:stepContourNorm(meshes,nrm),
       step:meshes, laser_min:0, _autoLaser:true };
+    const _sc=stepContourNorm(meshes,nrm); p.contourNorm=_sc.path; p.holes=_sc.holes;
     recomputeCad(p); PARTS.push(p);
     toast(`STEP: ${p.teilenr} · ${fmt(dims[0],1)} mm · ${matRaw?('Werkstoff '+p.material):'kein Werkstoff in Datei → '+p.material}· ${bends} Biegung(en)`);
   } finally { hideLoad(); }
@@ -583,7 +602,7 @@ function renderNesting(){
   let html='';
   for(const g of groups){
     html+=`<div class="nestgroup"><div class="ngh">${g.material} · ${fmt(g.dicke,2)} mm`+
-      `<span class="ngmeta">${g.items} Teile · ${g.nSheets} Tafel(n) · Ausnutzung ${fmt(g.util*100,0)} % · Abstand ${g.gap} mm · ${eur(g.groupMatCost)} Material</span></div><div class="ngsheets">`;
+      `<span class="ngmeta">${g.items} Teile · ${g.nSheets} Tafel(n) · Ausnutzung ${fmt(g.util*100,0)} % · Abstand ${g.gap} mm${g.nested?' · '+g.nested+' in Löchern geschachtelt':''} · ${eur(g.groupMatCost)} Material</span></div><div class="ngsheets">`;
     g.sheets.forEach((sh,si)=>{
       const W=300, H=W*SHEET_H/SHEET_W, sx=W/SHEET_W, sy=H/SHEET_H;
       const isLast=si===g.nSheets-1;
@@ -598,6 +617,12 @@ function renderNesting(){
           rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp-0.6).toFixed(1)}" height="${Math.max(1,Hp-0.6).toFixed(1)}" fill="${col}" fill-opacity="0.20" stroke="${col}" stroke-width="0.7"/>`;
         }
         if(Wp>16&&Hp>11) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${r.label}</text>`;
+      });
+      (sh.nested||[]).forEach(nz=>{ const col=colors[(nz.pi)%colors.length]; const pp=PARTS[nz.pi];
+        const X=nz.x*sx, Y=nz.y*sy, Wp=nz.w*sx, Hp=nz.h*sy;
+        if(pp&&pp.contourNorm) rects+=`<path d="${pp.contourNorm}" transform="translate(${X.toFixed(1)},${Y.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="0.38" fill-rule="evenodd" stroke="${col}" stroke-width="1.1" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        else rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp).toFixed(1)}" height="${Math.max(1,Hp).toFixed(1)}" fill="${col}" fill-opacity="0.38" stroke="${col}" stroke-width="0.8"/>`;
+        if(Wp>16&&Hp>11) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${nz.label}</text>`;
       });
       let restLabel='';
       if(cut){ if(cut.dir==='x'){ const cx=cut.at*sx; restLabel=`<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="#16181a" stroke-width="1" stroke-dasharray="3 2"/><text x="${(cx+(W-cx)/2).toFixed(1)}" y="${(H/2).toFixed(1)}" font-size="7" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; }
