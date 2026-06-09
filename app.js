@@ -371,7 +371,12 @@ function computeNesting(){
                    : (p.source==='step' && p.dicke>0 ? (p.vol_m3*1e9)/p.dicke : fp.w*fp.h);
     // Walzrichtung schränkt die erlaubte Drehung ein: längs = 0°, quer = 90°, beliebig = freie Winkel
     const walzAngles = p.walz==='laengs' ? [0] : p.walz==='quer' ? [90] : null;
-    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM, contourNorm:p.contourNorm, faceArea:faceArea>0?faceArea:fp.w*fp.h, walzAngles});
+    // Biegeteil? (STEP, deutlich aus der Ebene heraus) → flache Abwicklung als Rechteck schachteln,
+    // nicht die gebogene 3D-Kontur. Flache Teile (DXF/ungebogenes STEP) behalten ihre echte Kontur.
+    const bent = p.source==='step' && p.bbox.dims && p.bbox.dims[0] > p.dicke*2.5;
+    p._nestRect = bent;
+    const nestContour = bent ? '' : p.contourNorm;
+    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM, contourNorm:nestContour, faceArea:faceArea>0?faceArea:fp.w*fp.h, walzAngles});
   });
   const out=[];
   for(const key in groups){
@@ -780,7 +785,7 @@ function buildSheetSvg(g,sh,si,W){
   const draw=(pi,x,y,wm,hm,deg,op,sw)=>{ const col=NEST_COLORS[pi%NEST_COLORS.length], pp=PARTS[pi];
     const Wp=wm*sx,Hp=hm*sy, cx=Wp/2, cy=Hp/2, rb=rotBoxMin(Wp,Hp,deg);
     const tx=x*sx-rb.mnx, ty=y*sy-rb.mny;
-    if(pp&&pp.contourNorm&&pp.contourNorm.length>8)
+    if(pp&&!pp._nestRect&&pp.contourNorm&&pp.contourNorm.length>8)
       rects+=`<path d="${pp.contourNorm}" transform="translate(${tx.toFixed(1)},${ty.toFixed(1)}) rotate(${deg} ${cx.toFixed(1)} ${cy.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
     else rects+=`<rect x="${(x*sx).toFixed(1)}" y="${(y*sy).toFixed(1)}" width="${Math.max(1,rb.W-0.6).toFixed(1)}" height="${Math.max(1,rb.H-0.6).toFixed(1)}" fill="${col}" fill-opacity="${op}" stroke="${col}" stroke-width="0.7"/>`;
     if(rb.W>fs*1.6&&rb.H>fs*1.3) rects+=`<text x="${(x*sx+rb.W/2).toFixed(1)}" y="${(y*sy+rb.H/2+fs/3).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle" fill="${col}" font-family="monospace">${PARTS[pi]?(PARTS[pi]._lbl||''):''}</text>`;
@@ -803,7 +808,7 @@ function renderNesting(){
       `<span class="ngmeta">${g.items} Teile · ${g.nSheets} Tafel(n) · Ausnutzung ${fmt(g.util*100,0)} % · Abstand ${g.gap} mm${g.nested?' · '+g.nested+' in Löchern geschachtelt':''} · ${eur(g.groupMatCost)} Material</span></div><div class="ngsheets">`;
     g.sheets.forEach((sh,si)=>{ const cut=(si===g.nSheets-1&&sh._cut)?sh._cut:null;
       html+=`<div class="nsheet" data-g="${gi}" data-s="${si}" title="Zum Vergrößern klicken">${buildSheetSvg(g,sh,si,300)}`+
-        `<div class="nscap">Tafel ${si+1} · ${fmt(sh.usedArea/(SHEET_W*SHEET_H)*100,0)} %${cut?' · Trennschnitt':''} · 🔍 vergrößern</div></div>`;
+        `<div class="nscap">Tafel ${si+1} · ${fmt(Math.min(100,sh.usedArea/(SHEET_W*SHEET_H)*100),0)} %${cut?' · Trennschnitt':''} · 🔍 vergrößern</div></div>`;
     });
     html+=`</div></div>`;
   });
@@ -817,7 +822,7 @@ function openSheetModal(gi,si){
   const m=document.createElement('div'); m.className='viewer'; m.id='sheetModal';
   m.innerHTML=`<div class="viewer-card" style="width:auto;max-width:97vw;height:auto;max-height:95vh">
     <div class="viewer-h"><h3>Tafel ${si+1} · ${g.material} · ${fmt(g.dicke,2)} mm</h3>
-      <span class="meta">3000 × 1500 mm · ${teile} Teile · Belegung ${fmt(sh.usedArea/(SHEET_W*SHEET_H)*100,0)} %</span>
+      <span class="meta">3000 × 1500 mm · ${teile} Teile · Belegung ${fmt(Math.min(100,sh.usedArea/(SHEET_W*SHEET_H)*100),0)} %</span>
       <button class="x">✕</button></div>
     <div class="viewer-body" style="background:#eceef0;padding:16px;overflow:auto;display:block">${buildSheetSvg(g,sh,si,W)}</div></div>`;
   document.body.appendChild(m);

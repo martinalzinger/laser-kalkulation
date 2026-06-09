@@ -20,6 +20,12 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   Lücken bestehender Tafeln, bevor eine neue aufgemacht wird. Umsetzung: `maskFromContour` +
   `packTrueShapeGroup` in `app.js` (ersetzt den alten Rechteck-`packSheets`). Über die Heightmap ist
   **Überlappung ausgeschlossen**. Große Teile zuerst, kleine füllen die Zwischenräume.
+- **Biegeteile = flacher Zuschnitt schachteln:** Gebogene STEP-Teile (erkannt an `bbox.dims[0] > Dicke·2,5`,
+  d. h. deutlich aus der Ebene) werden **nicht** als gebogene 3D-Kontur, sondern als ihr **flaches
+  Abwicklungs-Rechteck** (`fp.w × fp.h`, Fläche = Volumen/Dicke) geschachtelt **und** so gezeichnet
+  (`p._nestRect`). Sonst würde der Packer das schmale gebogene Profil sehen, zu viele Teile auf die Tafel
+  legen → zu wenige Tafeln → zu billig. Flache Teile (DXF, ungebogenes STEP) behalten ihre echte Kontur
+  (Verzahnung). Die Tafel-Belegung wird zusätzlich hart auf **100 %** gedeckelt.
 - **Walzrichtung je Teil:** Pro Position wählbar (`p.walz`: `egal`/`laengs`/`quer`) – beliebig = freie Winkel,
   Walzrichtung = nur 0°, Gegen Walzrichtung = nur 90°. Steuert die erlaubten Drehwinkel beim Schachteln
   (`walzAngles` je Item). Auswahl + **Einzel-Löschen** (✕) sitzen in der Werkzeug-Leiste jeder Positionszeile.
