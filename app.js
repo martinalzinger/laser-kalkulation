@@ -222,20 +222,38 @@ function stepContourNorm(meshes,n){
   const w=mxx-mnx||1,h=mxy-mny||1; let d=''; hull.forEach((p,i)=>{ d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' '; });
   return {path:d+'Z', holes:[]};
 }
-// Shelf-Packer (FFDH) mit Drehung – Rechtecke inkl. Abstand
+// Skyline-Packer (bottom-left) – füllt freie Flächen dicht, große Teile zuerst, kleine in die Lücken
 function packSheets(items, sheetW, sheetH){
-  const list=items.slice().sort((a,b)=>b.h-a.h);
-  const sheets=[]; let s=null;
-  const newSheet=()=>{ s={rects:[],shelfY:0,shelfH:0,shelfX:0}; sheets.push(s); };
+  const list=items.slice().sort((a,b)=> (b.w*b.h)-(a.w*a.h) || b.h-a.h);
+  const sheets=[];
+  const newSheet=()=>{ const s={rects:[], sky:[{x:0,y:0,w:sheetW}]}; sheets.push(s); return s; };
+  function findPos(s,w,h){ const sl=s.sky; let best=null;
+    for(let i=0;i<sl.length;i++){ const x=sl[i].x; if(x+w>sheetW+0.01) continue;
+      let y=0, wsum=0, j=i;
+      while(j<sl.length && wsum<w-0.01){ if(sl[j].y>y)y=sl[j].y; wsum+=sl[j].w; j++; }
+      if(wsum<w-0.01) continue; if(y+h>sheetH+0.01) continue;
+      if(!best || y<best.y-0.01 || (Math.abs(y-best.y)<=0.01 && x<best.x)) best={x,y};
+    }
+    return best;
+  }
+  function placeSky(s,x,y,w,h){ const ny=y+h, nx2=x+w; const res=[];
+    for(const seg of s.sky){ const a=seg.x,b=seg.x+seg.w;
+      if(b<=x+0.001||a>=nx2-0.001){ res.push(seg); continue; }
+      if(a<x) res.push({x:a,y:seg.y,w:x-a});
+      if(b>nx2) res.push({x:nx2,y:seg.y,w:b-nx2});
+    }
+    res.push({x,y:ny,w}); res.sort((p,q)=>p.x-q.x);
+    const mg=[]; for(const seg of res){ const l=mg[mg.length-1]; if(l&&Math.abs(l.y-seg.y)<0.01&&Math.abs(l.x+l.w-seg.x)<0.01) l.w+=seg.w; else mg.push({x:seg.x,y:seg.y,w:seg.w}); }
+    s.sky=mg;
+  }
+  const place=(s,it,x,y,w,h,rot)=>{ const si=sheets.indexOf(s); s.rects.push({x,y,w,h,rot,label:it.label,pi:it.pi,it}); if(it){it._sheet=si;it._x=x;it._y=y;} placeSky(s,x,y,w,h); };
+  const tryFit=(sh,it)=>{ let w=it.w,h=it.h; let pos=findPos(sh,w,h); if(pos) return {pos,w,h,rot:false};
+    const p2=findPos(sh,h,w); if(p2) return {pos:p2,w:h,h:w,rot:true}; return null; };
   newSheet();
-  const place=(it,x,y,w,h,rot)=>{ const si=sheets.length-1; s.rects.push({x,y,w,h,rot,label:it.label,pi:it.pi,it}); if(it){it._sheet=si;it._x=x;it._y=y;} };
   for(const it of list){
-    let w=it.w, h=it.h, rot=false;
-    if(w>sheetW && h<=sheetW){ const t=w; w=h; h=t; rot=true; }   // quer legen wenn zu lang
-    if(s.shelfH>0 && s.shelfX+w<=sheetW){ place(it,s.shelfX,s.shelfY,w,h,rot); s.shelfX+=w; continue; }
-    const ny=s.shelfH>0 ? s.shelfY+s.shelfH : 0;
-    if(ny+h<=sheetH){ s.shelfY=ny; s.shelfH=h; s.shelfX=0; place(it,0,ny,w,h,rot); s.shelfX=w; continue; }
-    newSheet(); s.shelfH=h; place(it,0,0,w,h,rot); s.shelfX=w;
+    let done=false;
+    for(const sh of sheets){ const f=tryFit(sh,it); if(f){ place(sh,it,f.pos.x,f.pos.y,f.w,f.h,f.rot); done=true; break; } } // erst Lücken bestehender Tafeln füllen
+    if(!done){ const ns=newSheet(); const f=tryFit(ns,it)||{pos:{x:0,y:0},w:it.w,h:it.h,rot:false}; place(ns,it,f.pos.x,f.pos.y,f.w,f.h,f.rot); }
   }
   for(const sh of sheets){
     sh.usedX=sh.rects.length?Math.max(...sh.rects.map(r=>r.x+r.w)):0;
@@ -277,8 +295,7 @@ function computeNesting(){
     const sheets=packSheets(packList, SHEET_W, SHEET_H);
     // genestete Teile aufs Blech ihres Hosts setzen (Darstellung + Ausnutzung)
     for(const inst of nestedItems){ const host=inst._host; if(host && host._sheet!=null && sheets[host._sheet]){ const sh=sheets[host._sheet];
-      (sh.nested=sh.nested||[]).push({pi:inst.pi, label:inst.label, x:host._x+inst._holeOff.dx, y:host._y+inst._holeOff.dy, w:inst.fpw, h:inst.fph});
-      sh.usedArea+=inst.fpw*inst.fph; } }
+      (sh.nested=sh.nested||[]).push({pi:inst.pi, label:inst.label, x:host._x+inst._holeOff.dx, y:host._y+inst._holeOff.dy, w:inst.fpw, h:inst.fph}); } }
     const nSheets=sheets.length;
     const last=sheets[nSheets-1];
     // Resttafel: Trennschnitt in die Richtung, die den größeren (nicht verrechneten) Rest lässt
@@ -296,7 +313,7 @@ function computeNesting(){
     const totW=g.parts.reduce((a,p)=>a+p.gewicht*Math.max(1,parseInt(p.menge)||1),0);
     g.parts.forEach(p=>{ p._matkUnit = totW>0 ? groupMatCost*p.gewicht/totW : 0; });
     const usedArea=sheets.reduce((a,s)=>a+s.usedArea,0);
-    const util= nSheets>0 ? usedArea/(nSheets*SHEET_W*SHEET_H) : 0;
+    const util= nSheets>0 ? Math.min(1, usedArea/(nSheets*SHEET_W*SHEET_H)) : 0;
     out.push({key, material:g.material, dicke:g.dicke, gap, sheets, nSheets, chargedSheets, sheetWeight, groupMatCost, util, parts:g.parts.length, items:g.items.length, nested:nestedItems.length});
   }
   NEST_RESULT=out;
