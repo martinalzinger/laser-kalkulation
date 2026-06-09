@@ -20,6 +20,9 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   Lücken bestehender Tafeln, bevor eine neue aufgemacht wird. Umsetzung: `maskFromContour` +
   `packTrueShapeGroup` in `app.js` (ersetzt den alten Rechteck-`packSheets`). Über die Heightmap ist
   **Überlappung ausgeschlossen**. Große Teile zuerst, kleine füllen die Zwischenräume.
+- **Walzrichtung je Teil:** Pro Position wählbar (`p.walz`: `egal`/`laengs`/`quer`) – beliebig = freie Winkel,
+  Walzrichtung = nur 0°, Gegen Walzrichtung = nur 90°. Steuert die erlaubten Drehwinkel beim Schachteln
+  (`walzAngles` je Item). Auswahl + **Einzel-Löschen** (✕) sitzen in der Werkzeug-Leiste jeder Positionszeile.
 - **Loch-Schachtelung:** Passt ein kleineres Teil (inkl. Abstand) in das größte Loch eines größeren
   Teils derselben Gruppe, wird es dort eingeschachtelt (ein Teil pro Loch) statt eigene Fläche zu belegen.
 - **Auslastung = echte Metallfläche (kein >100 %):** Angezeigt wird der reale Metallanteil der Tafel

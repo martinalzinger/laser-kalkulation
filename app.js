@@ -332,12 +332,12 @@ function packTrueShapeGroup(items, gap){
   const minTopOf=s=>{ const ct=s.colTop; let mn=SR; for(let i=0;i<SC;i++){ const v=ct[i]; if(v<mn){ mn=v; if(mn===0)return 0; } } return mn; };
   const list=items.slice().sort((a,b)=>b.area-a.area);   // grosse zuerst, kleine fuellen Luecken
   newSheet();
-  for(const it of list){ let chosen=null;
+  for(const it of list){ let chosen=null; const angs=it.walzAngles||angles;   // Walzrichtung schränkt Winkel ein
     for(const s of sheets){ const mt=minTopOf(s);
-      for(const deg of angles){ const m=maskFor(it,deg); const d=drop(s,m,mt);
+      for(const deg of angs){ const m=maskFor(it,deg); const d=drop(s,m,mt);
         if(d&&(!chosen||d.baseY<chosen.baseY||(d.baseY===chosen.baseY&&d.top<chosen.top))) chosen={s,m,deg,x:d.x,baseY:d.baseY,top:d.top}; }
       if(chosen) break; }   // First-Fit: erste Tafel, die das Teil aufnimmt
-    if(!chosen){ const s=newSheet(); for(const deg of angles){ const m=maskFor(it,deg); const d=drop(s,m,0);
+    if(!chosen){ const s=newSheet(); for(const deg of angs){ const m=maskFor(it,deg); const d=drop(s,m,0);
         if(d&&(!chosen||d.baseY<chosen.baseY)) chosen={s,m,deg,x:d.x,baseY:d.baseY,top:d.top}; }
       if(!chosen) continue; }   // Teil größer als Tafel
     const {s,m,deg,x,baseY}=chosen;
@@ -369,7 +369,9 @@ function computeNesting(){
     // echte Metallfläche (für Ausnutzung): DXF = Konturfläche, STEP = Volumen/Dicke (Abwicklung)
     const faceArea = p.source==='dxf' ? (p.area_m2||0)*1e6
                    : (p.source==='step' && p.dicke>0 ? (p.vol_m3*1e9)/p.dicke : fp.w*fp.h);
-    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM, contourNorm:p.contourNorm, faceArea:faceArea>0?faceArea:fp.w*fp.h});
+    // Walzrichtung schränkt die erlaubte Drehung ein: längs = 0°, quer = 90°, beliebig = freie Winkel
+    const walzAngles = p.walz==='laengs' ? [0] : p.walz==='quer' ? [90] : null;
+    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM, contourNorm:p.contourNorm, faceArea:faceArea>0?faceArea:fp.w*fp.h, walzAngles});
   });
   const out=[];
   for(const key in groups){
@@ -473,6 +475,15 @@ function clearList(){
   $('#pdfbox')?.classList.add('hidden'); $('#planMeta').textContent='';
   renderPositions(); recalc(); $('#sec-pos').scrollIntoView();
   toast('Liste geleert.');
+}
+function deletePart(i){
+  if(i<0||i>=PARTS.length) return;
+  const p=PARTS[i]; PARTS.splice(i,1);
+  // war es das letzte Teil eines geladenen PDF-Plans? PDF-Vorschau ausblenden, wenn keine PDF-Teile mehr da sind
+  if(!PARTS.some(x=>x.source==='pdf')){ PDFDOC=null; $('#pdfbox')?.classList.add('hidden'); }
+  if(!PARTS.length){ $('#posArea').classList.add('hidden'); $('#dropArea').classList.remove('hidden'); $('#planMeta').textContent=''; }
+  renderPositions(); recalc();
+  toast(`Position ${p.teilenr||''} gelöscht.`);
 }
 
 // ---------- TruTops-PDF ----------
@@ -700,11 +711,17 @@ function renderPositions(){
       : p.source==='dxf' ? `${fmt(p.gewicht,2)} kg · ${fmt(p.cutlen_mm,0)} mm · ${fmt(p.laser_min,2)} min`
       : `${fmt(p.gewicht,2)} kg · ${fmt(p.laser_min,2)} min${p.auftrag?' · '+p.auftrag:''}`;
     const viewBtn = (p.source==='step'||p.source==='dxf') ? `<button class="vbtn" data-view="${i}">👁 Ansehen</button>` : '';
+    const w=p.walz||'egal';
+    const walzSel = (p.source==='step'||p.source==='dxf') ? `<select class="walzsel" data-i="${i}" data-k="walz" title="Lage zur Walzrichtung beim Schachteln">
+        <option value="egal"${w==='egal'?' selected':''}>↻ Lage beliebig</option>
+        <option value="laengs"${w==='laengs'?' selected':''}>↕ Walzrichtung</option>
+        <option value="quer"${w==='quer'?' selected':''}>↔ Gegen Walzrichtung</option></select>` : '';
+    const delBtn = `<button class="delbtn" data-del="${i}" title="Diese Position löschen">✕</button>`;
     const row=document.createElement('div');
     row.className='posrow'+(!c.known&&p.gewicht>0?' warn':'');
     row.innerHTML=`
       <div class="pidx">${i+1}</div>
-      <div class="nm"><div class="thumb">${thumbHtml(p)}</div><div class="nmtext"><b>${p.teilenr||'—'}${badge}</b><small>${sub}</small>${viewBtn}</div></div>
+      <div class="nm"><div class="thumb">${thumbHtml(p)}</div><div class="nmtext"><b>${p.teilenr||'—'}${badge}</b><small>${sub}</small><div class="rowtools">${viewBtn}${walzSel}${delBtn}</div></div></div>
       <div class="mini mat"><label>Material</label><select data-i="${i}" data-k="material">${matOpts}</select></div>
       <div class="mini d"><label>Dicke mm</label><input data-i="${i}" data-k="dicke" value="${fmt(p.dicke,2)}"></div>
       <div class="mini m"><label>Menge</label><input data-i="${i}" data-k="menge" value="${c.menge}"></div>
@@ -745,6 +762,7 @@ function renderPositions(){
     };
   });
   el.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openViewer(+b.dataset.view));
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deletePart(+b.dataset.del));
   $('#posCount').textContent=`${PARTS.length} Positionen`;
   if(!PDFDOC) $('#pdfbox')?.classList.add('hidden');
   renderNesting();
