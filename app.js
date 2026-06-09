@@ -33,6 +33,9 @@ function speedFor(m,t){ const g=SPEED[speedGroup(m)],ts=g.t,vs=g.v; if(t<=ts[0])
 function pierceTime(t){ return t<=3?0.4 : t<=6?0.8 : t<=10?1.5 : 2.5; }
 
 let PARTS=[], PDFDOC=null, PAGE=1, SCALE=1.2, PLANNAME='', WERKSTOFF='', DICKE=0, OCCT=null;
+// Schachtelung
+const SHEET_W=3000, SHEET_H=1500, MIN_GAP=5;
+let RESTTAFEL_CHARGE=false, NEST_RESULT=null;
 
 const $=s=>document.querySelector(s);
 const numDe=s=>{s=String(s).trim().replace(/\./g,'').replace(',','.');const v=parseFloat(s);return isNaN(v)?0:v;};
@@ -43,12 +46,14 @@ const eur=x=>fmt(x)+' €';
 function saveSettings(){ try{
   localStorage.setItem('alz_material_v2',JSON.stringify(MATERIAL));
   localStorage.setItem('alz_params_v2',JSON.stringify(PARAMS));
+  localStorage.setItem('alz_rest', RESTTAFEL_CHARGE?'1':'0');
 }catch(e){} }
 function loadSettings(){ try{
   const m=JSON.parse(localStorage.getItem('alz_material_v2')||'null');
   if(m&&typeof m==='object'&&Object.keys(m).length){ for(const k in MATERIAL) delete MATERIAL[k]; Object.assign(MATERIAL,m); }
   const p=JSON.parse(localStorage.getItem('alz_params_v2')||'null');
   if(p&&typeof p==='object') Object.assign(PARAMS,p);
+  RESTTAFEL_CHARGE = localStorage.getItem('alz_rest')==='1';
 }catch(e){} }
 function resetSettings(){ try{ localStorage.removeItem('alz_material_v2'); localStorage.removeItem('alz_params_v2'); }catch(e){} location.reload(); }
 
@@ -61,8 +66,8 @@ function calc(p){
   const {p:price,known}=matPrice(p.material); p._known=known;
   const menge=Math.max(1,parseInt(p.menge)||1);
   const bends=Math.max(0,parseInt(p.biegungen)||0);
-  // Stückkosten (variabel)
-  const matk=p.gewicht*price;
+  // Stückkosten (variabel) – Material aus Schachtelung, falls vorhanden
+  const matk=(p._matkUnit!=null)?p._matkUnit:p.gewicht*price;
   const laserk=p.laser_min*PARAMS.laser_satz/60;            // Laserzeit (min) × €/h
   const biege_s=bends>0 ? (PARAMS.handling_s + bends*PARAMS.t_biege_s) : 0;
   const biegek=biege_s*PARAMS.abkant_satz/3600;             // Biegezeit (s) × €/h
@@ -98,6 +103,90 @@ function recomputeCad(p){
   if(p.source==='dxf')      p.gewicht = +(p.area_m2 * (p.dicke/1000) * d).toFixed(3);
   else if(p.source==='step') p.gewicht = +(p.vol_m3 * d).toFixed(3);
   if(p._autoLaser) p.laser_min = estimateLaserMin(p);
+}
+
+// ---------- Schachtelung ----------
+function parseAbm(s){ const m=String(s||'').match(/([\d.,]+)\s*x\s*([\d.,]+)/i); return m?{w:numDe(m[1]),h:numDe(m[2])}:null; }
+function footprint(p){
+  if(p.source==='dxf' && p.bbox) return {w:p.bbox.w, h:p.bbox.h};
+  if(p.source==='pdf'){ const a=parseAbm(p.abm); if(a&&a.w&&a.h) return a; }
+  if(p.source==='step' && p.bbox){
+    const dm=p.bbox.dims; const L=dm[2]||1; // längste Kante
+    const blank=(p.dicke>0)?(p.vol_m3*1e9)/p.dicke:L*(dm[1]||1); // Abwicklungsfläche mm²
+    return {w:L, h:Math.max(dm[1]||1, blank/L)};
+  }
+  return null;
+}
+// Shelf-Packer (FFDH) mit Drehung – Rechtecke inkl. Abstand
+function packSheets(items, sheetW, sheetH){
+  const list=items.slice().sort((a,b)=>b.h-a.h);
+  const sheets=[]; let s=null;
+  const newSheet=()=>{ s={rects:[],shelfY:0,shelfH:0,shelfX:0}; sheets.push(s); };
+  newSheet();
+  for(const it of list){
+    let w=it.w, h=it.h;
+    if(w>sheetW && h<=sheetW){ const t=w; w=h; h=t; }       // quer legen wenn zu lang
+    // in aktuelle Reihe?
+    if(s.shelfH>0 && s.shelfX+w<=sheetW){
+      s.rects.push({x:s.shelfX,y:s.shelfY,w,h,label:it.label,pi:it.pi}); s.shelfX+=w; continue;
+    }
+    // neue Reihe auf aktuellem Blech?
+    const ny=s.shelfH>0 ? s.shelfY+s.shelfH : 0;
+    if(ny+h<=sheetH){
+      s.shelfY=ny; s.shelfH=h; s.shelfX=0;
+      s.rects.push({x:0,y:ny,w,h,label:it.label,pi:it.pi}); s.shelfX=w; continue;
+    }
+    // neues Blech
+    newSheet(); s.shelfH=h;
+    s.rects.push({x:0,y:0,w,h,label:it.label,pi:it.pi}); s.shelfX=w;
+  }
+  for(const sh of sheets){
+    sh.usedX=sh.rects.length?Math.max(...sh.rects.map(r=>r.x+r.w)):0;
+    sh.usedY=sh.rects.length?Math.max(...sh.rects.map(r=>r.y+r.h)):0;
+    sh.usedArea=sh.rects.reduce((a,r)=>a+r.w*r.h,0);
+  }
+  return sheets;
+}
+// Schachtelung berechnen: gruppiert nach Werkstoff+Dicke (nur CAD-Teile)
+function computeNesting(){
+  PARTS.forEach(p=>{ p._matkUnit=null; });
+  const groups={};
+  PARTS.forEach((p,i)=>{
+    if(p.source!=='dxf' && p.source!=='step') return;       // PDF: Plan ist bereits geschachtelt
+    const fp=footprint(p); if(!fp||!(fp.w>0)||!(fp.h>0)) return;
+    const key=p.material+' · '+fmt(p.dicke,2)+' mm';
+    (groups[key]=groups[key]||{material:p.material,dicke:p.dicke,parts:[],items:[]});
+    groups[key].parts.push(p);
+    const gap=Math.max(MIN_GAP, Math.round(p.dicke));
+    const menge=Math.max(1,parseInt(p.menge)||1);
+    for(let k=0;k<menge;k++) groups[key].items.push({w:fp.w+gap, h:fp.h+gap, label:(i+1)+'', pi:i});
+  });
+  const out=[];
+  for(const key in groups){
+    const g=groups[key]; const gap=Math.max(MIN_GAP, Math.round(g.dicke));
+    const sheets=packSheets(g.items, SHEET_W, SHEET_H);
+    const nSheets=sheets.length;
+    const last=sheets[nSheets-1];
+    // Resttafel: Trennschnitt in die Richtung, die den größeren (nicht verrechneten) Rest lässt
+    let lastFrac=1; last._cut=null;
+    if(!RESTTAFEL_CHARGE){
+      const ax=(last.usedX||0)*SHEET_H, ay=SHEET_W*(last.usedY||0);
+      if(ax<=ay){ lastFrac=ax/(SHEET_W*SHEET_H); if(last.usedX<SHEET_W) last._cut={dir:'x',at:last.usedX}; }
+      else      { lastFrac=ay/(SHEET_W*SHEET_H); if(last.usedY<SHEET_H) last._cut={dir:'y',at:last.usedY}; }
+      lastFrac=Math.min(1,lastFrac);
+    }
+    const chargedSheets=(nSheets-1)+lastFrac;
+    const dens=density(g.material), pr=matPrice(g.material).p;
+    const sheetWeight=(SHEET_W*SHEET_H/1e6)*(g.dicke/1000)*dens;   // kg/Tafel
+    const groupMatCost=chargedSheets*sheetWeight*pr;
+    const totW=g.parts.reduce((a,p)=>a+p.gewicht*Math.max(1,parseInt(p.menge)||1),0);
+    g.parts.forEach(p=>{ p._matkUnit = totW>0 ? groupMatCost*p.gewicht/totW : 0; });
+    const usedArea=sheets.reduce((a,s)=>a+s.usedArea,0);
+    const util= nSheets>0 ? usedArea/(nSheets*SHEET_W*SHEET_H) : 0;
+    out.push({key, material:g.material, dicke:g.dicke, gap, sheets, nSheets, chargedSheets, sheetWeight, groupMatCost, util, parts:g.parts.length, items:g.items.length});
+  }
+  NEST_RESULT=out;
+  return out;
 }
 
 // ---------- Datei-Routing ----------
@@ -337,6 +426,7 @@ function thumbHtml(p){
 
 // ---------- Positionen ----------
 function renderPositions(){
+  computeNesting();
   const el=$('#poslist'); el.innerHTML='';
   PARTS.forEach((p,i)=>{
     const c=calc(p);
@@ -393,8 +483,41 @@ function renderPositions(){
   el.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>openViewer(+b.dataset.view));
   $('#posCount').textContent=`${PARTS.length} Positionen`;
   if(!PDFDOC) $('#pdfbox')?.classList.add('hidden');
+  renderNesting();
 }
 function recalc(){ $('#bPos').textContent=PARTS.length; $('#bStk').textContent=totalStk(); $('#bTotal').textContent=eur(grandTotal()); }
+
+// Schachtelung visualisieren (Blechtafeln mit Teilen)
+function renderNesting(){
+  const area=$('#nestArea'), box=$('#nestBox'); if(!area||!box) return;
+  const groups=NEST_RESULT||[];
+  if(!groups.length){ area.style.display='none'; box.innerHTML=''; return; }
+  area.style.display='block';
+  $('#restCharge').checked=RESTTAFEL_CHARGE;
+  const colors=['#c00000','#1f6feb','#15803d','#a28231','#7c3aed','#0d9488','#b45309','#be185d'];
+  let html='';
+  for(const g of groups){
+    html+=`<div class="nestgroup"><div class="ngh">${g.material} · ${fmt(g.dicke,2)} mm`+
+      `<span class="ngmeta">${g.items} Teile · ${g.nSheets} Tafel(n) · Ausnutzung ${fmt(g.util*100,0)} % · Abstand ${g.gap} mm · ${eur(g.groupMatCost)} Material</span></div><div class="ngsheets">`;
+    g.sheets.forEach((sh,si)=>{
+      const W=300, H=W*SHEET_H/SHEET_W, sx=W/SHEET_W, sy=H/SHEET_H;
+      const isLast=si===g.nSheets-1;
+      const cut = (isLast && sh._cut) ? sh._cut : null;
+      let rects='';
+      sh.rects.forEach(r=>{ const col=colors[(r.pi)%colors.length];
+        rects+=`<rect x="${(r.x*sx).toFixed(1)}" y="${(r.y*sy).toFixed(1)}" width="${Math.max(1,(r.w*sx-0.6)).toFixed(1)}" height="${Math.max(1,(r.h*sy-0.6)).toFixed(1)}" fill="${col}" fill-opacity="0.22" stroke="${col}" stroke-width="0.7"/>`;
+        if(r.w*sx>14&&r.h*sy>9) rects+=`<text x="${(r.x*sx+r.w*sx/2).toFixed(1)}" y="${(r.y*sy+r.h*sy/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${r.label}</text>`;
+      });
+      let restLabel='';
+      if(cut){ if(cut.dir==='x'){ const cx=cut.at*sx; restLabel=`<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="#16181a" stroke-width="1" stroke-dasharray="3 2"/><text x="${(cx+(W-cx)/2).toFixed(1)}" y="${(H/2).toFixed(1)}" font-size="7" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; }
+        else { const cy=cut.at*sy; restLabel=`<line x1="0" y1="${cy.toFixed(1)}" x2="${W}" y2="${cy.toFixed(1)}" stroke="#16181a" stroke-width="1" stroke-dasharray="3 2"/><text x="${(W/2).toFixed(1)}" y="${(cy+(H-cy)/2+3).toFixed(1)}" font-size="7" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; } }
+      html+=`<div class="nsheet"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="#fff" stroke="#c9c4ba" stroke-width="1"/>${rects}${restLabel}</svg>`+
+        `<div class="nscap">Tafel ${si+1} · ${fmt(sh.usedArea/(SHEET_W*SHEET_H)*100,0)} %${cut?' · Trennschnitt':''}</div></div>`;
+    });
+    html+=`</div></div>`;
+  }
+  box.innerHTML=html;
+}
 
 // ---------- CAD-Viewer ----------
 let _three=null;
@@ -615,6 +738,7 @@ $('#drop').onclick=()=>$('#fileInput').click();
 $('#reload').onclick=()=>$('#fileInput').click();
 $('#addFile').onclick=()=>$('#fileInput').click();
 $('#clearList').onclick=clearList;
+$('#restCharge').onchange=e=>{ RESTTAFEL_CHARGE=e.target.checked; renderPositions(); recalc(); saveSettings(); };
 $('#fileInput').onchange=e=>{handleFiles(e.target.files);e.target.value='';};
 // Drag & Drop seitenweit – funktioniert auch wenn schon Teile geladen sind
 let _dragDepth=0;

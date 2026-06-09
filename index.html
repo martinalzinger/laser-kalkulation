@@ -133,6 +133,19 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .canvaswrap{display:flex;justify-content:center;align-items:flex-start;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:14px;overflow:auto;max-height:620px}
 .canvaswrap #planCanvas{flex:0 0 auto}
 #planCanvas{background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.12);max-width:100%;height:auto}
+/* Schachtelung */
+.nestbox{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+.nesthead{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.nesthead .nesttitle{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--red);font-weight:600}
+.restopt{margin-left:auto;display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--ink);cursor:pointer;user-select:none}
+.restopt input{width:16px;height:16px;accent-color:var(--red);cursor:pointer}
+.nestgroup{margin-bottom:16px}
+.ngh{font-size:13px;font-weight:700;margin-bottom:8px}
+.ngh .ngmeta{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--muted);margin-left:10px;letter-spacing:.03em}
+.ngsheets{display:flex;flex-wrap:wrap;gap:14px}
+.nsheet{background:var(--field);border:1px solid var(--line);border-radius:8px;padding:8px}
+.nsheet svg{display:block;border-radius:3px}
+.nscap{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:5px;text-align:center;letter-spacing:.04em}
 
 /* Buttons */
 .btn{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:12px 17px;border:0;border-radius:8px;cursor:pointer;font-weight:600;transition:.15s}
@@ -322,6 +335,13 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
           <span></span><span class="l">Teile-Nr</span><span class="hmat">Material</span><span class="hd">Dicke</span><span>Menge</span><span class="hb">Bieg.</span><span class="r hkg">€/kg</span><span class="r hep">€/Stück</span><span class="r">Gesamt</span>
         </div>
         <div class="poslist" id="poslist"></div>
+        <div class="nestbox" id="nestArea" style="display:none">
+          <div class="nesthead">
+            <span class="nesttitle">Schachtelung · Blechtafel 3000 × 1500 mm</span>
+            <label class="restopt"><input type="checkbox" id="restCharge"> Resttafel verrechnen</label>
+          </div>
+          <div id="nestBox"></div>
+        </div>
         <div class="pdfbox" id="pdfbox">
           <div class="pdfbar">
             <button id="pgPrev">‹ Seite</button><button id="pgNext">Seite ›</button>
