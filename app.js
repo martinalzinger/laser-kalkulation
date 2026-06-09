@@ -785,9 +785,9 @@ function buildSheetSvg(g,sh,si,W){
   const draw=(pi,x,y,wm,hm,deg,op,sw)=>{ const col=NEST_COLORS[pi%NEST_COLORS.length], pp=PARTS[pi];
     const Wp=wm*sx,Hp=hm*sy, cx=Wp/2, cy=Hp/2, rb=rotBoxMin(Wp,Hp,deg);
     const tx=x*sx-rb.mnx, ty=y*sy-rb.mny;
-    // Schachtelung nutzt bei Biegeteilen das Abwicklungs-Rechteck (korrekte Fläche/Tafelzahl),
-    // gezeichnet wird aber die echte Kontur inkl. Löcher/Ausschnitte (Detail bleibt sichtbar)
-    if(pp&&pp.contourNorm&&pp.contourNorm.length>8)
+    // Flache Teile: echte Kontur inkl. Löcher zeichnen. Biegeteile (_nestRect): sauberes
+    // Abwicklungs-Rechteck – die 3D-Projektion eines gebogenen Teils ist kein flacher Zuschnitt.
+    if(pp&&!pp._nestRect&&pp.contourNorm&&pp.contourNorm.length>8)
       rects+=`<path d="${pp.contourNorm}" transform="translate(${tx.toFixed(1)},${ty.toFixed(1)}) rotate(${deg} ${cx.toFixed(1)} ${cy.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
     else rects+=`<rect x="${(x*sx).toFixed(1)}" y="${(y*sy).toFixed(1)}" width="${Math.max(1,rb.W-0.6).toFixed(1)}" height="${Math.max(1,rb.H-0.6).toFixed(1)}" fill="${col}" fill-opacity="${op}" stroke="${col}" stroke-width="0.7"/>`;
     if(rb.W>fs*1.6&&rb.H>fs*1.3) rects+=`<text x="${(x*sx+rb.W/2).toFixed(1)}" y="${(y*sy+rb.H/2+fs/3).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle" fill="${col}" font-family="monospace">${PARTS[pi]?(PARTS[pi]._lbl||''):''}</text>`;
