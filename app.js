@@ -36,6 +36,7 @@ let PARTS=[], PDFDOC=null, PAGE=1, SCALE=1.2, PLANNAME='', WERKSTOFF='', DICKE=0
 // Schachtelung
 const SHEET_W=3000, SHEET_H=1500, MIN_GAP=5;
 let RESTTAFEL_CHARGE=false, NEST_RESULT=null;
+let PENDING_BENDS=[];   // Biegeprogramme (jupidu/html), die auf passende Teile warten
 
 const $=s=>document.querySelector(s);
 const numDe=s=>{s=String(s).trim().replace(/\./g,'').replace(',','.');const v=parseFloat(s);return isNaN(v)?0:v;};
@@ -160,9 +161,21 @@ function dominantNormal(meshes){
     } }
   if(!cl.length) return {x:0,y:0,z:1}; cl.sort((a,b)=>b.area-a.area); return {x:cl[0].ax,y:cl[0].ay,z:cl[0].az};
 }
-function sheetThickness(meshes,n){ let mn=1e18,mx=-1e18;
-  for(const m of meshes){ const pos=m.pos; for(let i=0;i<pos.length;i+=3){ const d=pos[i]*n.x+pos[i+1]*n.y+pos[i+2]*n.z; if(d<mn)mn=d; if(d>mx)mx=d; } }
-  return mx-mn; }
+// Blechdicke = Abstand zwischen Ober- und Unterseite der Hauptfläche (robust auch bei gebogenen Teilen,
+// da nur Flächen ~+n und ~-n zählen, nicht abstehende Schenkel)
+function sheetThickness(meshes,n){
+  let topS=0,topW=0,botS=0,botW=0;
+  for(const m of meshes){ const pos=m.pos, idx=m.idx; if(!idx) continue; const g=i=>[pos[i*3],pos[i*3+1],pos[i*3+2]];
+    for(let t=0;t<idx.length;t+=3){ const a=g(idx[t]),b=g(idx[t+1]),c=g(idx[t+2]);
+      let nx=(b[1]-a[1])*(c[2]-a[2])-(b[2]-a[2])*(c[1]-a[1]),ny=(b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2]),nz=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+      const L=Math.hypot(nx,ny,nz); if(L<1e-9)continue; const ar=0.5*L; const d=(nx*n.x+ny*n.y+nz*n.z)/L;
+      const proj=((a[0]+b[0]+c[0])/3)*n.x+((a[1]+b[1]+c[1])/3)*n.y+((a[2]+b[2]+c[2])/3)*n.z;
+      if(d>0.985){ topS+=proj*ar; topW+=ar; } else if(d<-0.985){ botS+=proj*ar; botW+=ar; }
+    } }
+  if(topW>0&&botW>0) return Math.abs(topS/topW - botS/botW);
+  // Fallback: Gesamtausdehnung entlang n
+  let mn=1e18,mx=-1e18; for(const m of meshes){ const pos=m.pos; for(let i=0;i<pos.length;i+=3){ const d=pos[i]*n.x+pos[i+1]*n.y+pos[i+2]*n.z; if(d<mn)mn=d; if(d>mx)mx=d; } } return mx-mn;
+}
 function planeBasis(n){
   const ax=Math.abs(n.x),ay=Math.abs(n.y),az=Math.abs(n.z);
   let t=(ax<=ay&&ax<=az)?{x:1,y:0,z:0}:(ay<=az?{x:0,y:1,z:0}:{x:0,y:0,z:1});
@@ -299,10 +312,45 @@ async function handleFiles(list){
       if(ext==='pdf') await loadPlan(await f.arrayBuffer(), f.name);
       else if(ext==='dxf') await loadDxf(await f.text(), f.name);
       else if(ext==='stp'||ext==='step') await loadStep(await f.arrayBuffer(), f.name);
+      else if(ext==='jupidu'){ const b=await parseBendJupidu(await f.arrayBuffer(), f.name); if(b) PENDING_BENDS.push(b); }
+      else if(ext==='html'||ext==='htm'){ const b=parseBendHtml(await f.text(), f.name); if(b) PENDING_BENDS.push(b); }
       else toast('Nicht unterstützt: '+f.name);
     }catch(e){ console.error(e); toast('Fehler bei '+f.name+': '+e.message); }
   }
+  applyPendingBends();
   showWork(); renderPositions(); recalc();
+}
+// --- Biegeprogramme (TruTops JUPIDU / HTML-Biegeplan) ---
+function parseBendHtml(htmlText,name){
+  const txt=htmlText.replace(/<[^>]+>/g,' ').replace(/&[a-zA-Z#0-9]+;/g,' ').replace(/\s+/g,' ');
+  const bieg=[...txt.matchAll(/Biegung\s+(\d+)/g)].map(m=>+m[1]);
+  const bends=bieg.length?Math.max(...bieg):0;
+  const mat=(txt.match(/Material\s+([A-Za-z0-9.\-]+)/)||[])[1]||'';
+  const dicke=numDe((txt.match(/Dicke\s+([\d.,]+)/)||[])[1]||'0');
+  const dn=(txt.match(/([0-9]{5,8}_\d+)/)||[])[1] || name.replace(/\.(html?|jupidu)$/i,'').replace(/[._]?Bend\d+$/i,'');
+  return {teilenr:dn, material:mat, dicke, bends, src:name};
+}
+async function parseBendJupidu(buf,name){
+  try{ const zip=await JSZip.loadAsync(buf); const f=zip.file('BendingProgram/mainbendingprogram.json'); if(!f) return null;
+    const j=JSON.parse(await f.async('string')); const bp=j.BendingProgram||{};
+    const dn=(bp.DrawingNumber||bp.Name||name).replace(/[._]?Bend\d+$/i,'').replace(/[._]+$/,'');
+    return {teilenr:dn, material:j.RawMaterialDinName||'', dicke:+j.SheetThickness||0, bends:(bp.BendingSteps||[]).length, src:name};
+  }catch(e){ console.warn('jupidu',e); return null; }
+}
+function applyPendingBends(){
+  const norm=s=>String(s||'').replace(/[._\s]+$/,'').replace(/\s+/g,'').toLowerCase();
+  for(let k=PENDING_BENDS.length-1;k>=0;k--){ const b=PENDING_BENDS[k];
+    const bn=norm(b.teilenr); if(!bn){ continue; }
+    const part=PARTS.find(p=>{const pn=norm(p.teilenr); return pn&&(pn===bn||pn.startsWith(bn)||bn.startsWith(pn));});
+    if(part){
+      if(b.bends!=null){ part.biegungen=b.bends; part._autoBends=false; part._bendSrc=true; }
+      if(b.material) part.material=normMaterial(b.material);
+      if(b.dicke>0) part.dicke=b.dicke;
+      if(part.source==='dxf'||part.source==='step') recomputeCad(part);
+      toast(`Biegeprogramm ${part.teilenr}: ${b.bends} Biegung(en) · ${normMaterial(b.material||part.material)} · ${fmt(b.dicke||part.dicke,1)} mm`);
+      PENDING_BENDS.splice(k,1);
+    }
+  }
 }
 function showWork(){ $('#dropArea').classList.add('hidden'); $('#posArea').classList.remove('hidden'); $('#sec-pos').scrollIntoView(); }
 function clearList(){
