@@ -225,6 +225,53 @@ function stepContourNorm(meshes,n){
   const w=mxx-mnx||1,h=mxy-mny||1; let d=''; hull.forEach((p,i)=>{ d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' '; });
   return {path:d+'Z', holes:[]};
 }
+// Randschleifen (Außenrand + Löcher) einer 2D-Dreiecksmenge über Kanten, die nur 1× vorkommen
+function loops2D(tris){
+  const Q=0.08, kk=p=>Math.round(p.x/Q)+'_'+Math.round(p.y/Q);
+  const ids=new Map(), pts=[];
+  const idOf=p=>{const k=kk(p); let id=ids.get(k); if(id==null){id=pts.length;ids.set(k,id);pts.push({x:p.x,y:p.y});} return id;};
+  const edge=new Map();
+  for(const t of tris){ const i0=idOf(t.a),i1=idOf(t.b),i2=idOf(t.c);
+    [[i0,i1],[i1,i2],[i2,i0]].forEach(([a,b])=>{ if(a===b)return; const k=a<b?a+'|'+b:b+'|'+a; edge.set(k,(edge.get(k)||0)+1); }); }
+  const adj=new Map(), push=(a,b)=>{ if(!adj.has(a))adj.set(a,[]); adj.get(a).push(b); };
+  for(const [k,c] of edge){ if(c!==1)continue; const i=k.indexOf('|'); const a=+k.slice(0,i),b=+k.slice(i+1); push(a,b); push(b,a); }
+  const seen=new Set(), loops=[];
+  for(const s of adj.keys()){ if(seen.has(s))continue; const lp=[]; let cur=s,prev=-1,gu=0;
+    while(cur!=null&&!seen.has(cur)&&gu++<200000){ seen.add(cur); lp.push(pts[cur]); const nb=adj.get(cur)||[]; let nx=nb.find(x=>x!==prev&&!seen.has(x)); if(nx==null)nx=nb.find(x=>x!==prev); prev=cur; cur=(nx==null?null:nx); }
+    if(lp.length>=3) loops.push(lp); }
+  return loops;
+}
+// Größte zusammenhängende FLACHE Fläche (eine Ebene) mit Außenrand + Löchern – sauberer Zuschnitt-Look
+// für Biegeteile (statt der überlagerten 3D-Projektion). Nur Darstellung.
+function dominantFaceFlat(meshes,n){
+ try{
+  const {u,v}=planeBasis(n); const dot=(P,Q)=>P[0]*Q.x+P[1]*Q.y+P[2]*Q.z;
+  const tris=[];
+  for(const m of meshes){ const pos=m.pos,idx=m.idx; if(!idx)continue; const g=i=>[pos[i*3],pos[i*3+1],pos[i*3+2]];
+    for(let t=0;t<idx.length;t+=3){ const A=g(idx[t]),B=g(idx[t+1]),C=g(idx[t+2]);
+      let nx=(B[1]-A[1])*(C[2]-A[2])-(B[2]-A[2])*(C[1]-A[1]);
+      let ny=(B[2]-A[2])*(C[0]-A[0])-(B[0]-A[0])*(C[2]-A[2]);
+      let nz=(B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0]);
+      const L=Math.hypot(nx,ny,nz); if(L<1e-9)continue;
+      if((nx*n.x+ny*n.y+nz*n.z)/L<0.985) continue;          // nur Flächen ~ +n
+      const cen=[(A[0]+B[0]+C[0])/3,(A[1]+B[1]+C[1])/3,(A[2]+B[2]+C[2])/3];
+      const p2=P=>({x:dot(P,u),y:dot(P,v)});
+      tris.push({off:dot(cen,n), area:0.5*L, a:p2(A),b:p2(B),c:p2(C)});
+    } }
+  if(tris.length<2) return null;
+  tris.sort((a,b)=>a.off-b.off);                             // nach Ebenen-Offset gruppieren
+  let groups=[],cur=null;
+  for(const t of tris){ if(cur&&Math.abs(t.off-cur.last)<2){cur.tris.push(t);cur.area+=t.area;cur.last=t.off;} else {cur={tris:[t],area:t.area,last:t.off};groups.push(cur);} }
+  groups.sort((a,b)=>b.area-a.area);                         // größte einzelne Fläche
+  const loops=loops2D(groups[0].tris); if(!loops.length) return null;
+  let mnx=1e18,mny=1e18,mxx=-1e18,mxy=-1e18;
+  loops.forEach(lp=>lp.forEach(p=>{if(p.x<mnx)mnx=p.x;if(p.y<mny)mny=p.y;if(p.x>mxx)mxx=p.x;if(p.y>mxy)mxy=p.y;}));
+  const w=mxx-mnx||1,h=mxy-mny||1;
+  loops.sort((a,b)=>shoelace(b)-shoelace(a));                // Außenrand zuerst
+  let d=''; loops.forEach(lp=>{ lp.forEach((p,i)=>{ d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' '; }); d+='Z '; });
+  return {path:d, w, h, loops:loops.length};
+ }catch(e){ console.warn('flatface',e); return null; }
+}
 // Skyline-Packer (bottom-left) – füllt freie Flächen dicht, große Teile zuerst, kleine in die Lücken
 function packSheets(items, sheetW, sheetH){
   const list=items.slice().sort((a,b)=> (b.w*b.h)-(a.w*a.h) || b.h-a.h);
@@ -656,6 +703,7 @@ async function loadStep(buf,name){
       cutlen_mm:cutlen, vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims},
       step:meshes, laser_min:0, _autoLaser:true };
     const _sc=stepContourNorm(meshes,nrm); p.contourNorm=_sc.path; p.holes=_sc.holes;
+    const _ff=dominantFaceFlat(meshes,nrm); if(_ff&&_ff.w>0&&_ff.h>0){ p._flatNorm=_ff.path; p._flatW=_ff.w; p._flatH=_ff.h; }
     recomputeCad(p); PARTS.push(p);
     toast(`STEP: ${p.teilenr} · ${fmt(dims[0],1)} mm · ${matRaw?('Werkstoff '+p.material):'kein Werkstoff in Datei → '+p.material}· ${bends} Biegung(en)`);
   } finally { hideLoad(); }
@@ -785,9 +833,14 @@ function buildSheetSvg(g,sh,si,W){
   const draw=(pi,x,y,wm,hm,deg,op,sw)=>{ const col=NEST_COLORS[pi%NEST_COLORS.length], pp=PARTS[pi];
     const Wp=wm*sx,Hp=hm*sy, cx=Wp/2, cy=Hp/2, rb=rotBoxMin(Wp,Hp,deg);
     const tx=x*sx-rb.mnx, ty=y*sy-rb.mny;
-    // Flache Teile: echte Kontur inkl. Löcher zeichnen. Biegeteile (_nestRect): sauberes
-    // Abwicklungs-Rechteck – die 3D-Projektion eines gebogenen Teils ist kein flacher Zuschnitt.
-    if(pp&&!pp._nestRect&&pp.contourNorm&&pp.contourNorm.length>8)
+    // Biegeteile (_nestRect): saubere flache Hauptfläche (Außenrand + Ausschnitte), unverzerrt mittig im Slot.
+    // Flache Teile: echte Kontur inkl. Löcher (füllt den Slot). Sonst: Rechteck.
+    if(pp&&pp._nestRect&&pp._flatNorm&&pp._flatW>0&&pp._flatH>0){
+      const fW=pp._flatW*sx, fH=pp._flatH*sy, fit=Math.min(Wp/fW,Hp/fH)||1;
+      const dW=fW*fit, dH=fH*fit, oxp=(Wp-dW)/2, oyp=(Hp-dH)/2;
+      rects+=`<path d="${pp._flatNorm}" transform="translate(${tx.toFixed(1)},${ty.toFixed(1)}) rotate(${deg} ${cx.toFixed(1)} ${cy.toFixed(1)}) translate(${oxp.toFixed(1)},${oyp.toFixed(1)}) scale(${dW.toFixed(2)},${dH.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    }
+    else if(pp&&!pp._nestRect&&pp.contourNorm&&pp.contourNorm.length>8)
       rects+=`<path d="${pp.contourNorm}" transform="translate(${tx.toFixed(1)},${ty.toFixed(1)}) rotate(${deg} ${cx.toFixed(1)} ${cy.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
     else rects+=`<rect x="${(x*sx).toFixed(1)}" y="${(y*sy).toFixed(1)}" width="${Math.max(1,rb.W-0.6).toFixed(1)}" height="${Math.max(1,rb.H-0.6).toFixed(1)}" fill="${col}" fill-opacity="${op}" stroke="${col}" stroke-width="0.7"/>`;
     if(rb.W>fs*1.6&&rb.H>fs*1.3) rects+=`<text x="${(x*sx+rb.W/2).toFixed(1)}" y="${(y*sy+rb.H/2+fs/3).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle" fill="${col}" font-family="monospace">${PARTS[pi]?(PARTS[pi]._lbl||''):''}</text>`;
