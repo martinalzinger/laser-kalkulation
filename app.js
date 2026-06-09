@@ -117,6 +117,47 @@ function footprint(p){
   }
   return null;
 }
+// --- echte Konturen für die Schachtel-Darstellung (normiert auf [0,1]) ---
+function flattenArc(c,r,a0,a1,seg){ const pts=[]; let da=a1-a0; if(da<0)da+=2*Math.PI; const n=Math.max(seg,Math.ceil(da/(Math.PI/12)));
+  for(let i=0;i<=n;i++){ const a=a0+da*i/n; pts.push({x:c.x+r*Math.cos(a),y:c.y+r*Math.sin(a)}); } return pts; }
+function dxfContourNorm(draw,bbox){
+  const {minX,maxY,w,h}=bbox; if(!(w>0)||!(h>0)) return '';
+  const nx=x=>((x-minX)/w).toFixed(4), ny=y=>((maxY-y)/h).toFixed(4); // y nach unten kippen
+  let d='';
+  for(const e of draw){
+    let pts=null, closed=false;
+    if(e.t==='pl'){ pts=e.pts; closed=e.closed; }
+    else if(e.t==='circle'){ pts=flattenArc(e.c,e.r,0,2*Math.PI,24); closed=true; }
+    else if(e.t==='arc'){ pts=flattenArc(e.c,e.r,e.a0,e.a1,16); }
+    if(!pts||!pts.length) continue;
+    d+='M'+nx(pts[0].x)+' '+ny(pts[0].y)+' ';
+    for(let i=1;i<pts.length;i++) d+='L'+nx(pts[i].x)+' '+ny(pts[i].y)+' ';
+    if(closed) d+='Z ';
+  }
+  return d;
+}
+function convexHull(pts){ if(pts.length<3) return pts.slice();
+  pts=pts.slice().sort((a,b)=>a.x-b.x||a.y-b.y);
+  const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);
+  const lo=[],hi=[];
+  for(const p of pts){ while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop(); lo.push(p); }
+  for(let i=pts.length-1;i>=0;i--){ const p=pts[i]; while(hi.length>=2&&cr(hi[hi.length-2],hi[hi.length-1],p)<=0)hi.pop(); hi.push(p); }
+  lo.pop(); hi.pop(); return lo.concat(hi); }
+function stepContourNorm(meshes,bb){
+  const ext=[bb.maxX-bb.minX, bb.maxY-bb.minY, bb.maxZ-bb.minZ];
+  let ti=0; if(ext[1]<ext[ti])ti=1; if(ext[2]<ext[ti])ti=2;       // Dickenachse = kleinste
+  const ax=[0,1,2].filter(i=>i!==ti);
+  let total=0; meshes.forEach(m=>total+=m.pos.length/3);
+  const step=Math.max(1,Math.floor(total/4000)); const pts=[]; let c=0;
+  for(const m of meshes){ const pos=m.pos; for(let i=0;i<pos.length;i+=3){ if(c++%step) continue; pts.push({x:pos[i+ax[0]], y:pos[i+ax[1]]}); } }
+  if(pts.length<3) return '';
+  const hull=convexHull(pts);
+  let mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
+  hull.forEach(p=>{ if(p.x<mnx)mnx=p.x; if(p.y<mny)mny=p.y; if(p.x>mxx)mxx=p.x; if(p.y>mxy)mxy=p.y; });
+  const w=mxx-mnx||1, h=mxy-mny||1;
+  let d=''; hull.forEach((p,i)=>{ d+=(i?'L':'M')+((p.x-mnx)/w).toFixed(4)+' '+((mxy-p.y)/h).toFixed(4)+' '; });
+  return d+'Z';
+}
 // Shelf-Packer (FFDH) mit Drehung – Rechtecke inkl. Abstand
 function packSheets(items, sheetW, sheetH){
   const list=items.slice().sort((a,b)=>b.h-a.h);
@@ -124,21 +165,21 @@ function packSheets(items, sheetW, sheetH){
   const newSheet=()=>{ s={rects:[],shelfY:0,shelfH:0,shelfX:0}; sheets.push(s); };
   newSheet();
   for(const it of list){
-    let w=it.w, h=it.h;
-    if(w>sheetW && h<=sheetW){ const t=w; w=h; h=t; }       // quer legen wenn zu lang
+    let w=it.w, h=it.h, rot=false;
+    if(w>sheetW && h<=sheetW){ const t=w; w=h; h=t; rot=true; }   // quer legen wenn zu lang
     // in aktuelle Reihe?
     if(s.shelfH>0 && s.shelfX+w<=sheetW){
-      s.rects.push({x:s.shelfX,y:s.shelfY,w,h,label:it.label,pi:it.pi}); s.shelfX+=w; continue;
+      s.rects.push({x:s.shelfX,y:s.shelfY,w,h,rot,label:it.label,pi:it.pi}); s.shelfX+=w; continue;
     }
     // neue Reihe auf aktuellem Blech?
     const ny=s.shelfH>0 ? s.shelfY+s.shelfH : 0;
     if(ny+h<=sheetH){
       s.shelfY=ny; s.shelfH=h; s.shelfX=0;
-      s.rects.push({x:0,y:ny,w,h,label:it.label,pi:it.pi}); s.shelfX=w; continue;
+      s.rects.push({x:0,y:ny,w,h,rot,label:it.label,pi:it.pi}); s.shelfX=w; continue;
     }
     // neues Blech
     newSheet(); s.shelfH=h;
-    s.rects.push({x:0,y:0,w,h,label:it.label,pi:it.pi}); s.shelfX=w;
+    s.rects.push({x:0,y:0,w,h,rot,label:it.label,pi:it.pi}); s.shelfX=w;
   }
   for(const sh of sheets){
     sh.usedX=sh.rects.length?Math.max(...sh.rects.map(r=>r.x+r.w)):0;
@@ -272,7 +313,7 @@ async function loadDxf(text,name){
   if(!g){ toast('DXF konnte nicht gelesen werden: '+name); return; }
   const p={ teilenr:name.replace(/\.dxf$/i,''), source:'dxf', quelle:name, material:'1.4301 V2A',
     dicke:2, menge:1, biegungen:0, gewicht:0, einstech:g.pierces, auftrag:'',
-    area_m2:g.area_m2, cutlen_mm:g.cutlen_mm, bbox:g.bbox, dxf:g.draw, laser_min:0, _autoLaser:true };
+    area_m2:g.area_m2, cutlen_mm:g.cutlen_mm, bbox:g.bbox, dxf:g.draw, contourNorm:dxfContourNorm(g.draw,g.bbox), laser_min:0, _autoLaser:true };
   recomputeCad(p); PARTS.push(p);
   toast(`DXF übernommen: ${p.teilenr} · ${fmt(g.bbox.w,0)}×${fmt(g.bbox.h,0)} mm`);
 }
@@ -375,6 +416,7 @@ async function loadStep(buf,name){
     const p={ teilenr:name.replace(/\.(stp|step)$/i,''), source:'step', quelle:name, material,
       dicke, menge:1, biegungen:bends, _autoBends:true, gewicht:0, einstech:1, auftrag:'',
       cutlen_mm:cutlen, vol_m3:vol/1e9, area_m2:area/1e6, bbox:{minX,minY,minZ,maxX,maxY,maxZ,dims},
+      contourNorm:stepContourNorm(meshes,{minX,minY,minZ,maxX,maxY,maxZ}),
       step:meshes, laser_min:0, _autoLaser:true };
     recomputeCad(p); PARTS.push(p);
     toast(`STEP: ${p.teilenr} · ${fmt(dims[0],1)} mm · ${matRaw?('Werkstoff '+p.material):'kein Werkstoff in Datei → '+p.material}· ${bends} Biegung(en)`);
@@ -504,9 +546,15 @@ function renderNesting(){
       const isLast=si===g.nSheets-1;
       const cut = (isLast && sh._cut) ? sh._cut : null;
       let rects='';
-      sh.rects.forEach(r=>{ const col=colors[(r.pi)%colors.length];
-        rects+=`<rect x="${(r.x*sx).toFixed(1)}" y="${(r.y*sy).toFixed(1)}" width="${Math.max(1,(r.w*sx-0.6)).toFixed(1)}" height="${Math.max(1,(r.h*sy-0.6)).toFixed(1)}" fill="${col}" fill-opacity="0.22" stroke="${col}" stroke-width="0.7"/>`;
-        if(r.w*sx>14&&r.h*sy>9) rects+=`<text x="${(r.x*sx+r.w*sx/2).toFixed(1)}" y="${(r.y*sy+r.h*sy/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${r.label}</text>`;
+      sh.rects.forEach(r=>{ const col=colors[(r.pi)%colors.length]; const pp=PARTS[r.pi];
+        const pw=Math.max(1,r.w-g.gap), ph=Math.max(1,r.h-g.gap);   // Teilegröße ohne Abstand
+        const X=r.x*sx, Y=r.y*sy, Wp=pw*sx, Hp=ph*sy;
+        if(pp && pp.contourNorm && !r.rot){
+          rects+=`<path d="${pp.contourNorm}" transform="translate(${X.toFixed(1)},${Y.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="0.20" stroke="${col}" stroke-width="0.9" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+        } else {
+          rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp-0.6).toFixed(1)}" height="${Math.max(1,Hp-0.6).toFixed(1)}" fill="${col}" fill-opacity="0.20" stroke="${col}" stroke-width="0.7"/>`;
+        }
+        if(Wp>16&&Hp>11) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+3).toFixed(1)}" font-size="8" text-anchor="middle" fill="${col}" font-family="monospace">${r.label}</text>`;
       });
       let restLabel='';
       if(cut){ if(cut.dir==='x'){ const cx=cut.at*sx; restLabel=`<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="#16181a" stroke-width="1" stroke-dasharray="3 2"/><text x="${(cx+(W-cx)/2).toFixed(1)}" y="${(H/2).toFixed(1)}" font-size="7" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; }
