@@ -8,15 +8,23 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
 ## Schachtelung / Tafel-Optimierung (dauerhafte Vorgaben)
 
 - **Blechtafel:** 3000 × 1500 mm. **Teileabstand = Blechstärke** (min. 1 mm), je Werkstoff+Dicke gruppiert.
-- **Packer-Strategie: First-Fit über ALLE Tafeln.** Jedes Teil füllt zuerst die **Lücken bestehender
-  Tafeln**, bevor eine neue Tafel aufgemacht wird. Umsetzung: Skyline-Packer (bottom-left) je Tafel +
-  Schleife über alle offenen Tafeln (`packSheets` in `app.js`). Große Teile zuerst, kleine füllen die
-  Zwischenräume → Tafeln werden voll gemacht.
+- **Packer-Strategie: Echte Konturschachtelung (true-shape), First-Fit über ALLE Tafeln.** Jedes Teil
+  wird aus seiner **echten Kontur** (`contourNorm` inkl. Löcher, evenodd) in eine Rasterbelegung
+  (`NEST_CELL` = 4 mm) gerendert, um den Teileabstand erweitert (Dilatation) und per **Bottom-Left
+  „Tetris-Drop" über eine Heightmap** an der tiefsten Stelle abgelegt — so verzahnen sich die Zacken
+  eines Teils in den Lücken des Nachbarn (wie TruTops „Gitterfertigung"). Mehrere **Drehwinkel**
+  (`NEST_ANGLES` = 0/90/180/270°) werden probiert, der dichteste gewinnt. Jedes Teil füllt zuerst die
+  Lücken bestehender Tafeln, bevor eine neue aufgemacht wird. Umsetzung: `maskFromContour` +
+  `packTrueShapeGroup` in `app.js` (ersetzt den alten Rechteck-`packSheets`). Über die Heightmap ist
+  **Überlappung ausgeschlossen**. Große Teile zuerst, kleine füllen die Zwischenräume.
 - **Loch-Schachtelung:** Passt ein kleineres Teil (inkl. Abstand) in das größte Loch eines größeren
   Teils derselben Gruppe, wird es dort eingeschachtelt (ein Teil pro Loch) statt eigene Fläche zu belegen.
-- **Auslastung korrekt (kein >100 % mehr):** Die frühere 108-%-Anzeige war ein Doppelzähl-Fehler
-  (genestete Teile). Jetzt: in Löchern geschachtelte Teile **nicht** zur belegten Fläche addieren,
-  Ausnutzung auf **100 % gedeckelt**. ~85 % ist nahe dem Maximum bei Rechteck-Packung runder/eckiger Teile.
+- **Auslastung = echte Metallfläche (kein >100 %):** Angezeigt wird der reale Metallanteil der Tafel
+  (Summe der Teil-Abwicklungsflächen ÷ Tafelfläche, auf 100 % gedeckelt). DXF = Konturfläche,
+  STEP = Volumen/Dicke. Bei stark gelochten/sternförmigen Teilen ist das bewusst **niedriger** (z. B.
+  ~37–47 %) — entspricht dem TruTops-„Verschnitt" (z. B. 65,88 % Verschnitt = ~34 % Metall) und ist
+  **kein** Fehler, sondern formbedingt. Solide/eckige Teile erreichen weiterhin ~85–95 %.
+  In Löchern geschachtelte Teile werden nicht doppelt gezählt.
 - **Resttafel-Schalter:** „Resttafel verrechnen" an/aus. Aus = letzte Tafel per Trennschnitt geteilt,
   Rest nicht berechnet (Schnitt in die Richtung mit größerem Rest). Beeinflusst die Materialkosten.
 - **Tafel-Detailansicht:** Klick auf eine Tafel öffnet sie groß (`buildSheetSvg`/`openSheetModal`).

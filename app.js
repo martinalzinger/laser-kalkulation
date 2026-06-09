@@ -262,6 +262,92 @@ function packSheets(items, sheetW, sheetH){
   }
   return sheets;
 }
+// ---------- Echte Konturschachtelung (Raster/Heightmap mit Drehung) ----------
+const NEST_CELL=4;                    // mm je Rasterzelle (Genauigkeit vs. Tempo)
+const NEST_ANGLES=[0,90];             // erlaubte Drehwinkel (Grad) – 0/90 reicht für die meisten Teile, hält das Tempo hoch
+let _nestCanvas=null;
+function nestCanvas(){ if(!_nestCanvas) _nestCanvas=document.createElement('canvas'); return _nestCanvas; }
+// Min-Ecke + Groesse des Bounding-Rechtecks einer w×h-Box, gedreht um ihren Mittelpunkt (lineare Einheit egal: mm oder px)
+function rotBoxMin(w,h,deg){ const a=deg*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a),cx=w/2,cy=h/2;
+  let mnx=1e18,mny=1e18,mxx=-1e18,mxy=-1e18;
+  [[0,0],[w,0],[w,h],[0,h]].forEach(([x,y])=>{ const dx=x-cx,dy=y-cy,rx=cx+dx*ca-dy*sa,ry=cy+dx*sa+dy*ca;
+    if(rx<mnx)mnx=rx;if(ry<mny)mny=ry;if(rx>mxx)mxx=rx;if(ry>mxy)mxy=ry; });
+  return {mnx,mny,W:mxx-mnx,H:mxy-mny}; }
+// Belegungsmaske (Spaltenprofile lo/hi je Spalte) aus echter Kontur, gedreht, inkl. Teileabstand
+function maskFromContour(contourNorm,wmm,hmm,deg,cell,gapMM){
+  const r=rotBoxMin(wmm,hmm,deg);
+  const cols=Math.max(1,Math.ceil(r.W/cell)), rows=Math.max(1,Math.ceil(r.H/cell));
+  const cv=nestCanvas(); cv.width=cols; cv.height=rows;
+  const ctx=cv.getContext('2d',{willReadFrequently:true});
+  ctx.clearRect(0,0,cols,rows); ctx.fillStyle='#000';
+  ctx.save();
+  ctx.translate(-r.mnx/cell,-r.mny/cell);          // gedrehtes Bounding-Min -> 0
+  ctx.translate((wmm/2)/cell,(hmm/2)/cell); ctx.rotate(deg*Math.PI/180); ctx.translate(-(wmm/2)/cell,-(hmm/2)/cell);
+  ctx.scale(wmm/cell,hmm/cell);                     // [0,1]-Pfad -> Zellen
+  const d=(contourNorm&&contourNorm.length>8)?contourNorm:'M0 0L1 0L1 1L0 1Z';
+  try{ ctx.fill(new Path2D(d),'evenodd'); }catch(e){ ctx.fillRect(0,0,1,1); }
+  ctx.restore();
+  const img=ctx.getImageData(0,0,cols,rows).data;
+  const bits=new Uint8Array(cols*rows);
+  for(let i=0,j=3;i<cols*rows;i++,j+=4) if(img[j]>40) bits[i]=1;
+  const g=Math.max(0,Math.round(gapMM/cell)); let mask=bits;
+  if(g>0){ const dd=new Uint8Array(cols*rows);
+    for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){ if(!bits[y*cols+x])continue;
+      for(let dy=-g;dy<=g;dy++){ const ny=y+dy; if(ny<0||ny>=rows)continue; const xr=g-Math.abs(dy);
+        for(let dx=-xr;dx<=xr;dx++){ const nx=x+dx; if(nx<0||nx>=cols)continue; dd[ny*cols+nx]=1; } } }
+    mask=dd; }
+  const lo=new Int32Array(cols).fill(-1), hi=new Int32Array(cols).fill(-1);
+  for(let x=0;x<cols;x++){ for(let y=0;y<rows;y++) if(mask[y*cols+x]){lo[x]=y;break;}
+    for(let y=rows-1;y>=0;y--) if(mask[y*cols+x]){hi[x]=y;break;} }
+  return {cols,rows,lo,hi};
+}
+// Punkt (px,py) im unrotierten Footprint -> Sheet-Koordinate (beruecksichtigt Drehung des Teils)
+function footPointToSheet(it,px,py){ const deg=it._rot||0;
+  if(!deg) return {x:it._x+px, y:it._y+py};
+  const a=deg*Math.PI/180,ca=Math.cos(a),sa=Math.sin(a),cx=it.fpw/2,cy=it.fph/2;
+  const rx=cx+(px-cx)*ca-(py-cy)*sa, ry=cy+(px-cx)*sa+(py-cy)*ca;
+  const rb=rotBoxMin(it.fpw,it.fph,deg);
+  return {x:it._x+(rx-rb.mnx), y:it._y+(ry-rb.mny)}; }
+// Bottom-Left "Tetris-Drop" ueber Heightmap, First-Fit ueber alle Tafeln, mit Drehung
+function packTrueShapeGroup(items, gap){
+  const cell=NEST_CELL, angles=NEST_ANGLES;
+  const SC=Math.ceil(SHEET_W/cell), SR=Math.ceil(SHEET_H/cell);
+  const maskCache=new Map();
+  const maskFor=(it,deg)=>{ const key=it.pi+'@'+deg; let m=maskCache.get(key);
+    if(!m){ m=maskFromContour(it.contourNorm,it.fpw,it.fph,deg,cell,gap); maskCache.set(key,m); } return m; };
+  const sheets=[]; const newSheet=()=>{ const s={rects:[],colTop:new Int32Array(SC).fill(0)}; sheets.push(s); return s; };
+  // Tiefste Fallposition (Bottom-Left); Höhe = rows (konstant je Maske) → kein zweiter Loop nötig
+  function drop(s,m,minTop){ const {cols,rows,lo}=m; if(cols>SC||minTop+rows>SR) return null;
+    const ct=s.colTop, maxBase=SR-rows; let bx=-1, bb=1e9;
+    for(let x=0;x+cols<=SC;x++){ let baseY=0;
+      for(let c=0;c<cols;c++){ const l=lo[c]; if(l<0)continue; const need=ct[x+c]-l; if(need>baseY)baseY=need; }
+      if(baseY>maxBase) continue;
+      if(baseY<bb){ bb=baseY; bx=x; if(baseY===0) break; } }   // 0 ist optimal → Früh-Abbruch (links zuerst)
+    return bx<0 ? null : {x:bx, baseY:bb, top:bb+rows-1}; }
+  const minTopOf=s=>{ const ct=s.colTop; let mn=SR; for(let i=0;i<SC;i++){ const v=ct[i]; if(v<mn){ mn=v; if(mn===0)return 0; } } return mn; };
+  const list=items.slice().sort((a,b)=>b.area-a.area);   // grosse zuerst, kleine fuellen Luecken
+  newSheet();
+  for(const it of list){ let chosen=null;
+    for(const s of sheets){ const mt=minTopOf(s);
+      for(const deg of angles){ const m=maskFor(it,deg); const d=drop(s,m,mt);
+        if(d&&(!chosen||d.baseY<chosen.baseY||(d.baseY===chosen.baseY&&d.top<chosen.top))) chosen={s,m,deg,x:d.x,baseY:d.baseY,top:d.top}; }
+      if(chosen) break; }   // First-Fit: erste Tafel, die das Teil aufnimmt
+    if(!chosen){ const s=newSheet(); for(const deg of angles){ const m=maskFor(it,deg); const d=drop(s,m,0);
+        if(d&&(!chosen||d.baseY<chosen.baseY)) chosen={s,m,deg,x:d.x,baseY:d.baseY,top:d.top}; }
+      if(!chosen) continue; }   // Teil größer als Tafel
+    const {s,m,deg,x,baseY}=chosen;
+    for(let c=0;c<m.cols;c++) if(m.hi[c]>=0) s.colTop[x+c]=baseY+m.hi[c]+1;
+    const xmm=x*cell, ymm=baseY*cell; const si=sheets.indexOf(s);
+    s.rects.push({pi:it.pi,label:it.label,x:xmm,y:ymm,w:it.fpw,h:it.fph,rot:deg,it});
+    it._sheet=si; it._x=xmm; it._y=ymm; it._rot=deg;
+  }
+  for(const s of sheets){ let mx=0,lastCol=0;
+    for(let i=0;i<SC;i++){ if(s.colTop[i]>mx)mx=s.colTop[i]; if(s.colTop[i]>0)lastCol=i; }
+    s.usedY=mx*cell; s.usedX=(lastCol+1)*cell;
+    s.usedArea=s.rects.reduce((a,r)=>a+(r.it.faceArea||r.w*r.h),0);
+  }
+  return sheets;
+}
 // Schachtelung berechnen: gruppiert nach Werkstoff+Dicke (nur CAD-Teile)
 function computeNesting(){
   PARTS.forEach(p=>{ p._matkUnit=null; });
@@ -275,7 +361,10 @@ function computeNesting(){
     const gap=Math.max(1, Math.round(p.dicke));
     const menge=Math.max(1,parseInt(p.menge)||1);
     const holesMM=(p.holes||[]).map(h=>({x:h.x*fp.w, y:h.y*fp.h, w:h.w*fp.w, h:h.h*fp.h})); // Löcher in mm (rel. Footprint-Ecke)
-    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM});
+    // echte Metallfläche (für Ausnutzung): DXF = Konturfläche, STEP = Volumen/Dicke (Abwicklung)
+    const faceArea = p.source==='dxf' ? (p.area_m2||0)*1e6
+                   : (p.source==='step' && p.dicke>0 ? (p.vol_m3*1e9)/p.dicke : fp.w*fp.h);
+    for(let k=0;k<menge;k++) groups[key].items.push({pi:i, label:(i+1)+'', fpw:fp.w, fph:fp.h, w:fp.w+gap, h:fp.h+gap, area:fp.w*fp.h, holes:holesMM, contourNorm:p.contourNorm, faceArea:faceArea>0?faceArea:fp.w*fp.h});
   });
   const out=[];
   for(const key in groups){
@@ -292,10 +381,11 @@ function computeNesting(){
       else { packList.push(inst);
         (inst.holes||[]).forEach(h=>{ if(h.w>=30&&h.h>=30) availHoles.push({owner:inst,x:h.x,y:h.y,w:h.w,h:h.h,used:false}); }); }
     }
-    const sheets=packSheets(packList, SHEET_W, SHEET_H);
-    // genestete Teile aufs Blech ihres Hosts setzen (Darstellung + Ausnutzung)
+    const sheets=packTrueShapeGroup(packList, gap);   // echte Konturschachtelung mit Drehung
+    // genestete Teile aufs Blech ihres Hosts setzen (Loch-Offset inkl. Host-Drehung)
     for(const inst of nestedItems){ const host=inst._host; if(host && host._sheet!=null && sheets[host._sheet]){ const sh=sheets[host._sheet];
-      (sh.nested=sh.nested||[]).push({pi:inst.pi, label:inst.label, x:host._x+inst._holeOff.dx, y:host._y+inst._holeOff.dy, w:inst.fpw, h:inst.fph}); } }
+      const pos=footPointToSheet(host, inst._holeOff.dx, inst._holeOff.dy);
+      (sh.nested=sh.nested||[]).push({pi:inst.pi, label:inst.label, x:pos.x, y:pos.y, w:inst.fpw, h:inst.fph, rot:0}); } }
     const nSheets=sheets.length;
     const last=sheets[nSheets-1];
     // Resttafel: Trennschnitt in die Richtung, die den größeren (nicht verrechneten) Rest lässt
@@ -663,14 +753,17 @@ function buildSheetSvg(g,sh,si,W){
   const cut=(si===g.nSheets-1 && sh._cut)?sh._cut:null;
   const fs=Math.max(7, W/42);   // Schriftgröße skaliert mit Tafelgröße
   let rects='';
-  const draw=(pi,x,y,wm,hm,rot,op,sw)=>{ const col=NEST_COLORS[pi%NEST_COLORS.length], pp=PARTS[pi];
-    const X=x*sx,Y=y*sy,Wp=wm*sx,Hp=hm*sy;
-    if(pp&&pp.contourNorm&&!rot) rects+=`<path d="${pp.contourNorm}" transform="translate(${X.toFixed(1)},${Y.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-    else rects+=`<rect x="${X.toFixed(1)}" y="${Y.toFixed(1)}" width="${Math.max(1,Wp-0.6).toFixed(1)}" height="${Math.max(1,Hp-0.6).toFixed(1)}" fill="${col}" fill-opacity="${op}" stroke="${col}" stroke-width="0.7"/>`;
-    if(Wp>fs*1.6&&Hp>fs*1.3) rects+=`<text x="${(X+Wp/2).toFixed(1)}" y="${(Y+Hp/2+fs/3).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle" fill="${col}" font-family="monospace">${PARTS[pi]?(PARTS[pi]._lbl||''):''}</text>`;
+  // x,y = Min-Ecke des GEDREHTEN Bounding (mm); wm,hm = unrotiertes Footprint (mm); deg = Drehwinkel
+  const draw=(pi,x,y,wm,hm,deg,op,sw)=>{ const col=NEST_COLORS[pi%NEST_COLORS.length], pp=PARTS[pi];
+    const Wp=wm*sx,Hp=hm*sy, cx=Wp/2, cy=Hp/2, rb=rotBoxMin(Wp,Hp,deg);
+    const tx=x*sx-rb.mnx, ty=y*sy-rb.mny;
+    if(pp&&pp.contourNorm&&pp.contourNorm.length>8)
+      rects+=`<path d="${pp.contourNorm}" transform="translate(${tx.toFixed(1)},${ty.toFixed(1)}) rotate(${deg} ${cx.toFixed(1)} ${cy.toFixed(1)}) scale(${Wp.toFixed(2)},${Hp.toFixed(2)})" fill="${col}" fill-opacity="${op}" fill-rule="evenodd" stroke="${col}" stroke-width="${sw}" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+    else rects+=`<rect x="${(x*sx).toFixed(1)}" y="${(y*sy).toFixed(1)}" width="${Math.max(1,rb.W-0.6).toFixed(1)}" height="${Math.max(1,rb.H-0.6).toFixed(1)}" fill="${col}" fill-opacity="${op}" stroke="${col}" stroke-width="0.7"/>`;
+    if(rb.W>fs*1.6&&rb.H>fs*1.3) rects+=`<text x="${(x*sx+rb.W/2).toFixed(1)}" y="${(y*sy+rb.H/2+fs/3).toFixed(1)}" font-size="${fs.toFixed(1)}" text-anchor="middle" fill="${col}" font-family="monospace">${PARTS[pi]?(PARTS[pi]._lbl||''):''}</text>`;
   };
-  sh.rects.forEach(r=>{ PARTS[r.pi]._lbl=r.label; draw(r.pi, r.x, r.y, Math.max(1,r.w-g.gap), Math.max(1,r.h-g.gap), r.rot, 0.20, 0.9); });
-  (sh.nested||[]).forEach(nz=>{ PARTS[nz.pi]._lbl=nz.label; draw(nz.pi, nz.x, nz.y, nz.w, nz.h, false, 0.38, 1.1); });
+  sh.rects.forEach(r=>{ PARTS[r.pi]._lbl=r.label; draw(r.pi, r.x, r.y, r.w, r.h, r.rot||0, 0.20, 0.9); });
+  (sh.nested||[]).forEach(nz=>{ PARTS[nz.pi]._lbl=nz.label; draw(nz.pi, nz.x, nz.y, nz.w, nz.h, nz.rot||0, 0.38, 1.1); });
   let restLabel=''; const lf=Math.max(7,W/55);
   if(cut){ if(cut.dir==='x'){ const cx=cut.at*sx; restLabel=`<line x1="${cx.toFixed(1)}" y1="0" x2="${cx.toFixed(1)}" y2="${H}" stroke="#16181a" stroke-width="1" stroke-dasharray="4 3"/><text x="${(cx+(W-cx)/2).toFixed(1)}" y="${(H/2).toFixed(1)}" font-size="${lf.toFixed(1)}" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; }
     else { const cy=cut.at*sy; restLabel=`<line x1="0" y1="${cy.toFixed(1)}" x2="${W}" y2="${cy.toFixed(1)}" stroke="#16181a" stroke-width="1" stroke-dasharray="4 3"/><text x="${(W/2).toFixed(1)}" y="${(cy+(H-cy)/2).toFixed(1)}" font-size="${lf.toFixed(1)}" text-anchor="middle" fill="#9a9aa0" font-family="monospace">Rest</text>`; } }

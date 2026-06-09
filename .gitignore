@@ -8,6 +8,9 @@ Screenshot 2026*.png
 
 # lokale Tool-/Editor-Dateien
 .claude/
+nest_test.js
+test_nest.html
+Vorschau_Konturschachtelung.svg
 __pycache__/
 *.log
 Thumbs.db
