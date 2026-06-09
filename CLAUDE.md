@@ -12,8 +12,11 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   wird aus seiner **echten Kontur** (`contourNorm` inkl. Löcher, evenodd) in eine Rasterbelegung
   (`NEST_CELL` = 4 mm) gerendert, um den Teileabstand erweitert (Dilatation) und per **Bottom-Left
   „Tetris-Drop" über eine Heightmap** an der tiefsten Stelle abgelegt — so verzahnen sich die Zacken
-  eines Teils in den Lücken des Nachbarn (wie TruTops „Gitterfertigung"). Mehrere **Drehwinkel**
-  (`NEST_ANGLES` = 0/90/180/270°) werden probiert, der dichteste gewinnt. Jedes Teil füllt zuerst die
+  eines Teils in den Lücken des Nachbarn (wie TruTops „Gitterfertigung"). **Drehwinkel** werden probiert,
+  der dichteste gewinnt — per Einstellung umschaltbar (`NEST_MODE`/`NEST_ANGLE_SETS`): **schnell** 0/90°
+  (Default, für symmetrische Teile dichteste + schnellste Variante), **mittel** 0/45/90°, **fein** 0–90°
+  in 10°-Schritten (langsamer, hilft v. a. asymmetrischen/länglichen Teilen; bei symmetrischen Teilen
+  bringt mehr Winkel nichts und packt eher lockerer). Jedes Teil füllt zuerst die
   Lücken bestehender Tafeln, bevor eine neue aufgemacht wird. Umsetzung: `maskFromContour` +
   `packTrueShapeGroup` in `app.js` (ersetzt den alten Rechteck-`packSheets`). Über die Heightmap ist
   **Überlappung ausgeschlossen**. Große Teile zuerst, kleine füllen die Zwischenräume.

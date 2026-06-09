@@ -405,6 +405,14 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
       <div class="fld"><label>Zeit je Biegung s</label><input id="p_tb"></div>
       <div class="fld"><label>Laser-Overhead × (DXF)</label><input id="p_ovh"></div>
     </div>
+    <div class="subnote">Schachtelung</div>
+    <div class="fld"><label>Drehwinkel (Genauigkeit ↔ Tempo)</label>
+      <select id="p_nestmode" style="width:100%">
+        <option value="fast">Schnell · 0°/90° (empfohlen)</option>
+        <option value="med">Mittel · 0/45/90°</option>
+        <option value="fine">Fein · 0–90° in 10°-Schritten (langsamer)</option>
+      </select>
+    </div>
     <button class="btn s" id="btnMaterial" style="width:100%;margin-top:14px">Materialpreise bearbeiten</button>
     <div class="subnote" style="color:var(--gold);margin-top:16px">Standard: TruLaser 5030 = 134,17 €/h · Werte an eigene Maschinen anpassen</div>
   </div>

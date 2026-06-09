@@ -48,13 +48,16 @@ function saveSettings(){ try{
   localStorage.setItem('alz_material_v2',JSON.stringify(MATERIAL));
   localStorage.setItem('alz_params_v2',JSON.stringify(PARAMS));
   localStorage.setItem('alz_rest', RESTTAFEL_CHARGE?'1':'0');
+  localStorage.setItem('alz_nestmode', NEST_MODE);
 }catch(e){} }
+function setNestMode(mode){ if(!NEST_ANGLE_SETS[mode]) mode='fast'; NEST_MODE=mode; NEST_ANGLES=NEST_ANGLE_SETS[mode]; }
 function loadSettings(){ try{
   const m=JSON.parse(localStorage.getItem('alz_material_v2')||'null');
   if(m&&typeof m==='object'&&Object.keys(m).length){ for(const k in MATERIAL) delete MATERIAL[k]; Object.assign(MATERIAL,m); }
   const p=JSON.parse(localStorage.getItem('alz_params_v2')||'null');
   if(p&&typeof p==='object') Object.assign(PARAMS,p);
   RESTTAFEL_CHARGE = localStorage.getItem('alz_rest')==='1';
+  setNestMode(localStorage.getItem('alz_nestmode')||'fast');
 }catch(e){} }
 function resetSettings(){ try{ localStorage.removeItem('alz_material_v2'); localStorage.removeItem('alz_params_v2'); }catch(e){} location.reload(); }
 
@@ -264,7 +267,9 @@ function packSheets(items, sheetW, sheetH){
 }
 // ---------- Echte Konturschachtelung (Raster/Heightmap mit Drehung) ----------
 const NEST_CELL=4;                    // mm je Rasterzelle (Genauigkeit vs. Tempo)
-const NEST_ANGLES=[0,90];             // erlaubte Drehwinkel (Grad) – 0/90 reicht für die meisten Teile, hält das Tempo hoch
+const NEST_ANGLE_SETS={fast:[0,90], med:[0,45,90], fine:[0,10,20,30,40,50,60,70,80,90]};
+let NEST_MODE='fast';                 // Schachtel-Modus (per Einstellung änderbar)
+let NEST_ANGLES=NEST_ANGLE_SETS[NEST_MODE];   // Drehwinkel (Grad) – mehr Winkel helfen v. a. asymmetrischen Teilen, sind aber langsamer
 let _nestCanvas=null;
 function nestCanvas(){ if(!_nestCanvas) _nestCanvas=document.createElement('canvas'); return _nestCanvas; }
 // Min-Ecke + Groesse des Bounding-Rechtecks einer w×h-Box, gedreht um ihren Mittelpunkt (lineare Einheit egal: mm oder px)
@@ -940,6 +945,10 @@ function bindParams(){
   for(const id in map){ const [key,dec]=map[id]; const el=$('#'+id); if(!el) continue;
     el.value=fmt(PARAMS[key],dec);
     el.onchange=()=>{ PARAMS[key]=numDe(el.value); PARTS.forEach(p=>{if(p.source==='dxf'||p.source==='step')recomputeCad(p);}); renderPositions(); recalc(); saveSettings(); }; }
+  // Schachtel-Modus (Drehwinkel) – Umschalter
+  const nm=$('#p_nestmode');
+  if(nm){ nm.value=NEST_MODE;
+    nm.onchange=()=>{ setNestMode(nm.value); if(PARTS.length){ showLoad('Schachtelung wird neu berechnet …'); setTimeout(()=>{ renderPositions(); recalc(); hideLoad(); },30); } saveSettings(); }; }
 }
 
 // ---------- Material-Dialog ----------
