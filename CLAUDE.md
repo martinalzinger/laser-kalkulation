@@ -56,6 +56,16 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   Rest nicht berechnet (Schnitt in die Richtung mit größerem Rest). Beeinflusst die Materialkosten.
 - **Tafel-Detailansicht:** Klick auf eine Tafel öffnet sie groß (`buildSheetSvg`/`openSheetModal`).
 
+## DXF-Import
+
+- **Blöcke rekursiv auflösen:** CAD-Exporte (z. B. Solid Edge) verpacken die Geometrie in
+  INSERT→Block-Ketten (SE, SE1, …) statt sie auf oberster Ebene abzulegen. `parseDxfGeom` löst INSERTs
+  rekursiv mit Affintransformation (Verschiebung/Drehung/Skalierung/Spiegelung) auf. Anmerkungs-Blöcke
+  (`*ANNOT*`) und Layer `H` (Hilfslinien/Ballons) werden verworfen; TEXT/DIMENSION etc. übersprungen.
+- **Segmente verketten:** Lose Linien/Bögen/Splines werden an den Endpunkten (Toleranz 0,05 mm) zu
+  geschlossenen Konturen verkettet — erst dadurch stimmen Fläche (statt Bounding-Box), Einstiche,
+  Loch-Erkennung und die Füllung beim Schachteln. Bögen/Ellipsen werden dafür als Punktketten abgetastet.
+
 ## Mengen-/Eingabelogik (große + kleine Teile)
 
 - Jede Position hat eine **Menge**; die Schachtelung expandiert auf Einzel-Instanzen je Menge.

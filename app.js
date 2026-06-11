@@ -736,30 +736,92 @@ function polyLen(v,closed){let L=0;for(let i=1;i<v.length;i++)L+=dist(v[i-1],v[i
 function shoelace(v){let A=0;for(let i=0;i<v.length;i++){const j=(i+1)%v.length;A+=v[i].x*v[j].y-v[j].x*v[i].y;}return Math.abs(A/2);}
 function parseDxfGeom(text){
   const d=new DxfParser().parseSync(text);
+  // --- Blöcke rekursiv auflösen (Solid Edge & Co. verpacken die Geometrie in INSERT→Block-Ketten) ---
+  const I={a:1,b:0,c:0,d:1,e:0,f:0};
+  const mul=(M,N)=>({a:M.a*N.a+M.b*N.c, b:M.a*N.b+M.b*N.d, c:M.c*N.a+M.d*N.c, d:M.c*N.b+M.d*N.d,
+                     e:M.a*N.e+M.b*N.f+M.e, f:M.c*N.e+M.d*N.f+M.f});
+  const SKIP=new Set(['TEXT','MTEXT','ATTDEF','ATTRIB','DIMENSION','POINT','HATCH','LEADER','MLEADER','SOLID','3DFACE','VIEWPORT']);
+  const flat=[];
+  (function walk(ents,M,depth){
+    if(!ents||depth>8) return;
+    for(const e of ents){
+      if(e.type==='INSERT'){
+        const b=d.blocks&&d.blocks[e.name]; if(!b||!b.entities) continue;
+        if(/ANNOT/i.test(e.name||'')) continue;                       // Anmerkungs-Blöcke (Ballons/Text) überspringen
+        const rot=(e.rotation||0)*Math.PI/180, cr=Math.cos(rot), sr=Math.sin(rot);
+        const xs=e.xScale==null?1:e.xScale, ys=e.yScale==null?1:e.yScale;
+        const px=e.position?e.position.x:0, py=e.position?e.position.y:0;
+        const bx=b.position?b.position.x:0, by=b.position?b.position.y:0;
+        const L={a:cr*xs, b:-sr*ys, c:sr*xs, d:cr*ys, e:px-(cr*xs*bx - sr*ys*by), f:py-(sr*xs*bx + cr*ys*by)};
+        walk(b.entities, mul(M,L), depth+1);
+      } else if(!SKIP.has(e.type)) flat.push({e,M});
+    }
+  })(d.entities, I, 0);
+  // Anmerkungs-/Hilfslayer (Solid Edge "H") verwerfen, wenn andere Geometrie existiert
+  const hasMain=flat.some(f=>String(f.e.layer||'')!=='H');
+  const items=hasMain?flat.filter(f=>String(f.e.layer||'')!=='H'):flat;
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,cutlen=0;
-  const loops=[]; const draw=[]; // draw: {type,...} für SVG
+  const loops=[]; const draw=[]; const segs=[]; // segs: offene Punktketten → werden zu Konturen verkettet
   const ext=(x,y)=>{if(x<minX)minX=x;if(y<minY)minY=y;if(x>maxX)maxX=x;if(y>maxY)maxY=y;};
-  for(const e of (d.entities||[])){
+  for(const {e,M} of items){
+    const tp=p=>({x:M.a*p.x+M.b*p.y+M.e, y:M.c*p.x+M.d*p.y+M.f});
+    const sca=Math.hypot(M.a,M.c), scb=Math.hypot(M.b,M.d);
+    const uniform=Math.abs(sca-scb)<1e-6 && (M.a*M.d-M.b*M.c)>0;     // gleichförmig skaliert, nicht gespiegelt
     if(e.type==='LINE'&&e.vertices&&e.vertices.length>=2){
-      const v=e.vertices; cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y));
-      draw.push({t:'pl',pts:v,closed:false});
+      const v=e.vertices.map(tp); cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); segs.push(v);
     }else if((e.type==='LWPOLYLINE'||e.type==='POLYLINE')&&e.vertices){
-      const v=e.vertices.map(p=>({x:p.x,y:p.y})); const cl=!!(e.shape||e.closed);
+      const v=e.vertices.map(tp); const cl=!!(e.shape||e.closed);
       cutlen+=polyLen(v,cl); v.forEach(p=>ext(p.x,p.y));
-      draw.push({t:'pl',pts:v,closed:cl});
-      if(cl&&v.length>=3) loops.push({area:shoelace(v),v});
+      if(cl&&v.length>=3){ draw.push({t:'pl',pts:v,closed:true}); loops.push({area:shoelace(v),v}); }
+      else segs.push(v);
     }else if(e.type==='CIRCLE'&&e.center){
-      const r=e.radius; cutlen+=2*Math.PI*r; ext(e.center.x-r,e.center.y-r);ext(e.center.x+r,e.center.y+r);
-      draw.push({t:'circle',c:e.center,r}); loops.push({area:Math.PI*r*r,v:null,r});
+      if(uniform){
+        const c=tp(e.center), r=e.radius*sca; cutlen+=2*Math.PI*r; ext(c.x-r,c.y-r);ext(c.x+r,c.y+r);
+        draw.push({t:'circle',c,r}); loops.push({area:Math.PI*r*r,v:null,r});
+      } else {
+        const v=[]; for(let i=0;i<=32;i++){const a=2*Math.PI*i/32; v.push(tp({x:e.center.x+e.radius*Math.cos(a), y:e.center.y+e.radius*Math.sin(a)}));}
+        cutlen+=polyLen(v,true); v.forEach(p=>ext(p.x,p.y)); draw.push({t:'pl',pts:v,closed:true});
+        if(v.length>=3) loops.push({area:shoelace(v),v});
+      }
     }else if(e.type==='ARC'&&e.center){
-      const r=e.radius; let a0=e.startAngle,a1=e.endAngle;
-      // dxf-parser liefert Bogen-Winkel in Radiant
-      let da=a1-a0; if(da<0)da+=2*Math.PI; cutlen+=r*da;
-      ext(e.center.x-r,e.center.y-r);ext(e.center.x+r,e.center.y+r);
-      draw.push({t:'arc',c:e.center,r,a0,a1});
+      // dxf-parser liefert Bogen-Winkel in Radiant; als Punktkette abtasten (fürs Verketten)
+      let da=e.endAngle-e.startAngle; if(da<0)da+=2*Math.PI; const n=Math.max(8,Math.ceil(da/(Math.PI/24)));
+      const v=[]; for(let i=0;i<=n;i++){const a=e.startAngle+da*i/n; v.push(tp({x:e.center.x+e.radius*Math.cos(a), y:e.center.y+e.radius*Math.sin(a)}));}
+      cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); segs.push(v);
     }else if(e.type==='SPLINE'&&(e.fitPoints||e.controlPoints)){
-      const v=(e.fitPoints&&e.fitPoints.length?e.fitPoints:e.controlPoints).map(p=>({x:p.x,y:p.y}));
-      cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); draw.push({t:'pl',pts:v,closed:false});
+      const v=(e.fitPoints&&e.fitPoints.length?e.fitPoints:e.controlPoints).map(tp);
+      cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); segs.push(v);
+    }else if(e.type==='ELLIPSE'&&e.center){
+      const mr=e.majorAxisEndPoint||{x:e.radius||1,y:0}; const ratio=e.axisRatio||1;
+      const t0=e.startAngle||0, t1=(e.endAngle==null?2*Math.PI:e.endAngle);
+      let dt=t1-t0; if(dt<=0)dt+=2*Math.PI; const n=Math.max(12,Math.ceil(dt/(Math.PI/16)));
+      const v=[]; for(let i=0;i<=n;i++){const t=t0+dt*i/n; const ex=Math.cos(t),ey=Math.sin(t);
+        v.push(tp({x:e.center.x+mr.x*ex - mr.y*ratio*ey, y:e.center.y+mr.y*ex + mr.x*ratio*ey}));}
+      const closed=Math.abs(dt-2*Math.PI)<1e-6;
+      cutlen+=polyLen(v,closed); v.forEach(p=>ext(p.x,p.y));
+      if(closed&&v.length>=3){ draw.push({t:'pl',pts:v,closed:true}); loops.push({area:shoelace(v),v}); }
+      else segs.push(v);
+    }
+  }
+  // offene Segmente an den Endpunkten zu geschlossenen Konturen verketten (CAD-Export = lose Linien/Bögen)
+  {
+    const tol=0.05, dEq=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y)<tol;
+    const used=new Array(segs.length).fill(false);
+    for(let i=0;i<segs.length;i++){
+      if(used[i]||segs[i].length<2) continue; used[i]=true;
+      let chain=segs[i].slice(), grew=true;
+      while(grew){ grew=false;
+        const head=chain[0], tail=chain[chain.length-1];
+        for(let j=0;j<segs.length;j++){ if(used[j])continue; const s=segs[j];
+          if(dEq(tail,s[0])){ chain=chain.concat(s.slice(1)); used[j]=true; grew=true; break; }
+          if(dEq(tail,s[s.length-1])){ chain=chain.concat(s.slice(0,-1).reverse()); used[j]=true; grew=true; break; }
+          if(dEq(head,s[s.length-1])){ chain=s.slice(0,-1).concat(chain); used[j]=true; grew=true; break; }
+          if(dEq(head,s[0])){ chain=s.slice(1).reverse().concat(chain); used[j]=true; grew=true; break; }
+        }
+      }
+      const closed=chain.length>=3 && dEq(chain[0],chain[chain.length-1]);
+      if(closed){ chain.pop(); draw.push({t:'pl',pts:chain,closed:true}); loops.push({area:shoelace(chain),v:chain}); }
+      else draw.push({t:'pl',pts:chain,closed:false});
     }
   }
   if(!isFinite(minX)) return null;
