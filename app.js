@@ -93,10 +93,12 @@ function unitVkAt(p,Q){ const c=calc(p); const sk=c.varUnit + c.fixPos/Math.max(
 const grandTotal=()=>PARTS.reduce((a,p)=>a+calc(p).position,0);
 const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
-// Laserzeit-Schätzung (min) aus Schneidlänge + Einstichen (DXF & STEP)
+// Laserzeit-Schätzung (min) aus Schneidlänge + Gravur + Einstichen (DXF & STEP)
+const MARK_SPEED=10000;                                     // mm/min Gravieren/Markieren (Faserlaser)
 function estimateLaserMin(p){
   const v=speedFor(p.material,p.dicke||1);
-  const beam=(p.cutlen_mm||0)/Math.max(150,v);              // Beam-on (min)
+  const beam=(p.cutlen_mm||0)/Math.max(150,v)
+           + (p.marklen_mm||0)/MARK_SPEED;                  // Beam-on (min): Schnitt + Gravur
   const pierce=(p.einstech||0)*pierceTime(p.dicke||1)/60;   // Einstechzeit
   const rapid=beam*0.10;                                    // Eilgang ~10%
   return +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
@@ -757,40 +759,38 @@ function parseDxfGeom(text){
       } else if(!SKIP.has(e.type)) flat.push({e,M});
     }
   })(d.entities, I, 0);
-  // Anmerkungs-/Hilfslayer (Solid Edge "H") verwerfen, wenn andere Geometrie existiert
-  const hasMain=flat.some(f=>String(f.e.layer||'')!=='H');
-  const items=hasMain?flat.filter(f=>String(f.e.layer||'')!=='H'):flat;
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,cutlen=0;
-  const loops=[]; const draw=[]; const segs=[]; // segs: offene Punktketten → werden zu Konturen verkettet
+  // Layer "H" (Solid Edge: Biege-/Markierlinien) → Bearbeitung "Gravur" statt Schnitt
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  const draw=[]; const segs=[]; // segs: offene Punktketten {v,mark} → werden je Bearbeitung verkettet
   const ext=(x,y)=>{if(x<minX)minX=x;if(y<minY)minY=y;if(x>maxX)maxX=x;if(y>maxY)maxY=y;};
-  for(const {e,M} of items){
+  for(const {e,M} of flat){
+    const mark=String(e.layer||'')==='H'; const kind=mark?'mark':'cut';
     const tp=p=>({x:M.a*p.x+M.b*p.y+M.e, y:M.c*p.x+M.d*p.y+M.f});
     const sca=Math.hypot(M.a,M.c), scb=Math.hypot(M.b,M.d);
     const uniform=Math.abs(sca-scb)<1e-6 && (M.a*M.d-M.b*M.c)>0;     // gleichförmig skaliert, nicht gespiegelt
     if(e.type==='LINE'&&e.vertices&&e.vertices.length>=2){
-      const v=e.vertices.map(tp); cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); segs.push(v);
+      const v=e.vertices.map(tp); v.forEach(p=>ext(p.x,p.y)); segs.push({v,mark});
     }else if((e.type==='LWPOLYLINE'||e.type==='POLYLINE')&&e.vertices){
       const v=e.vertices.map(tp); const cl=!!(e.shape||e.closed);
-      cutlen+=polyLen(v,cl); v.forEach(p=>ext(p.x,p.y));
-      if(cl&&v.length>=3){ draw.push({t:'pl',pts:v,closed:true}); loops.push({area:shoelace(v),v}); }
-      else segs.push(v);
+      v.forEach(p=>ext(p.x,p.y));
+      if(cl&&v.length>=3) draw.push({t:'pl',pts:v,closed:true,kind});
+      else segs.push({v,mark});
     }else if(e.type==='CIRCLE'&&e.center){
       if(uniform){
-        const c=tp(e.center), r=e.radius*sca; cutlen+=2*Math.PI*r; ext(c.x-r,c.y-r);ext(c.x+r,c.y+r);
-        draw.push({t:'circle',c,r}); loops.push({area:Math.PI*r*r,v:null,r});
+        const c=tp(e.center), r=e.radius*sca; ext(c.x-r,c.y-r);ext(c.x+r,c.y+r);
+        draw.push({t:'circle',c,r,kind});
       } else {
         const v=[]; for(let i=0;i<=32;i++){const a=2*Math.PI*i/32; v.push(tp({x:e.center.x+e.radius*Math.cos(a), y:e.center.y+e.radius*Math.sin(a)}));}
-        cutlen+=polyLen(v,true); v.forEach(p=>ext(p.x,p.y)); draw.push({t:'pl',pts:v,closed:true});
-        if(v.length>=3) loops.push({area:shoelace(v),v});
+        v.forEach(p=>ext(p.x,p.y)); draw.push({t:'pl',pts:v,closed:true,kind});
       }
     }else if(e.type==='ARC'&&e.center){
       // dxf-parser liefert Bogen-Winkel in Radiant; als Punktkette abtasten (fürs Verketten)
       let da=e.endAngle-e.startAngle; if(da<0)da+=2*Math.PI; const n=Math.max(8,Math.ceil(da/(Math.PI/24)));
       const v=[]; for(let i=0;i<=n;i++){const a=e.startAngle+da*i/n; v.push(tp({x:e.center.x+e.radius*Math.cos(a), y:e.center.y+e.radius*Math.sin(a)}));}
-      cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); segs.push(v);
+      v.forEach(p=>ext(p.x,p.y)); segs.push({v,mark});
     }else if(e.type==='SPLINE'&&(e.fitPoints||e.controlPoints)){
       const v=(e.fitPoints&&e.fitPoints.length?e.fitPoints:e.controlPoints).map(tp);
-      cutlen+=polyLen(v,false); v.forEach(p=>ext(p.x,p.y)); segs.push(v);
+      v.forEach(p=>ext(p.x,p.y)); segs.push({v,mark});
     }else if(e.type==='ELLIPSE'&&e.center){
       const mr=e.majorAxisEndPoint||{x:e.radius||1,y:0}; const ratio=e.axisRatio||1;
       const t0=e.startAngle||0, t1=(e.endAngle==null?2*Math.PI:e.endAngle);
@@ -798,21 +798,21 @@ function parseDxfGeom(text){
       const v=[]; for(let i=0;i<=n;i++){const t=t0+dt*i/n; const ex=Math.cos(t),ey=Math.sin(t);
         v.push(tp({x:e.center.x+mr.x*ex - mr.y*ratio*ey, y:e.center.y+mr.y*ex + mr.x*ratio*ey}));}
       const closed=Math.abs(dt-2*Math.PI)<1e-6;
-      cutlen+=polyLen(v,closed); v.forEach(p=>ext(p.x,p.y));
-      if(closed&&v.length>=3){ draw.push({t:'pl',pts:v,closed:true}); loops.push({area:shoelace(v),v}); }
-      else segs.push(v);
+      v.forEach(p=>ext(p.x,p.y));
+      if(closed&&v.length>=3) draw.push({t:'pl',pts:v,closed:true,kind});
+      else segs.push({v,mark});
     }
   }
-  // offene Segmente an den Endpunkten zu geschlossenen Konturen verketten (CAD-Export = lose Linien/Bögen)
-  {
+  // offene Segmente an den Endpunkten zu Konturen verketten (CAD-Export = lose Linien/Bögen), je Bearbeitung
+  function chainSegs(list,kind){
     const tol=0.05, dEq=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y)<tol;
-    const used=new Array(segs.length).fill(false);
-    for(let i=0;i<segs.length;i++){
-      if(used[i]||segs[i].length<2) continue; used[i]=true;
-      let chain=segs[i].slice(), grew=true;
+    const used=new Array(list.length).fill(false);
+    for(let i=0;i<list.length;i++){
+      if(used[i]||list[i].length<2) continue; used[i]=true;
+      let chain=list[i].slice(), grew=true;
       while(grew){ grew=false;
         const head=chain[0], tail=chain[chain.length-1];
-        for(let j=0;j<segs.length;j++){ if(used[j])continue; const s=segs[j];
+        for(let j=0;j<list.length;j++){ if(used[j])continue; const s=list[j];
           if(dEq(tail,s[0])){ chain=chain.concat(s.slice(1)); used[j]=true; grew=true; break; }
           if(dEq(tail,s[s.length-1])){ chain=chain.concat(s.slice(0,-1).reverse()); used[j]=true; grew=true; break; }
           if(dEq(head,s[s.length-1])){ chain=s.slice(0,-1).concat(chain); used[j]=true; grew=true; break; }
@@ -820,27 +820,47 @@ function parseDxfGeom(text){
         }
       }
       const closed=chain.length>=3 && dEq(chain[0],chain[chain.length-1]);
-      if(closed){ chain.pop(); draw.push({t:'pl',pts:chain,closed:true}); loops.push({area:shoelace(chain),v:chain}); }
-      else draw.push({t:'pl',pts:chain,closed:false});
+      if(closed) chain.pop();
+      draw.push({t:'pl',pts:chain,closed,kind});
     }
   }
+  chainSegs(segs.filter(s=>!s.mark).map(s=>s.v),'cut');
+  chainSegs(segs.filter(s=>s.mark).map(s=>s.v),'mark');
   if(!isFinite(minX)) return null;
   const w=maxX-minX,h=maxY-minY;
+  return {bbox:{w,h,minX,minY,maxX,maxY}, draw};
+}
+// Längen/Fläche/Einstiche/Kontur eines DXF-Teils aus den Bearbeitungen (kind je Element) neu berechnen.
+// Wird auch nach dem Umschalten Schneiden/Gravieren/Ignorieren im Viewer aufgerufen.
+function recomputeDxfPart(p){
+  let cut=0, mark=0; const loops=[];
+  for(const e of p.dxf){
+    if(e.kind==='skip') continue;
+    const len = e.t==='circle' ? 2*Math.PI*e.r
+              : e.t==='arc' ? (()=>{let da=e.a1-e.a0;if(da<0)da+=2*Math.PI;return e.r*da;})()
+              : polyLen(e.pts, e.closed);
+    if(e.kind==='mark'){ mark+=len; continue; }
+    cut+=len;
+    if(e.t==='circle') loops.push({area:Math.PI*e.r*e.r});
+    else if(e.closed&&e.pts.length>=3) loops.push({area:shoelace(e.pts)});
+  }
   loops.sort((a,b)=>b.area-a.area);
-  let area_mm2 = loops.length ? loops[0].area - loops.slice(1).reduce((a,l)=>a+l.area,0) : w*h;
-  if(area_mm2<0) area_mm2 = loops.length?loops[0].area:w*h;
-  const pierces = Math.max(1, loops.length || draw.filter(e=>e.closed||e.t==='circle').length);
-  return {bbox:{w,h,minX,minY,maxX,maxY}, cutlen_mm:cutlen, area_m2:area_mm2/1e6, pierces, draw};
+  const bb=p.bbox.w*p.bbox.h;
+  let area = loops.length ? loops[0].area - loops.slice(1).reduce((a,l)=>a+l.area,0) : bb;
+  if(area<0) area = loops.length?loops[0].area:bb;
+  p.cutlen_mm=cut; p.marklen_mm=mark; p.area_m2=area/1e6; p.einstech=Math.max(1,loops.length);
+  const dc=dxfContourNorm(p.dxf.filter(e=>e.kind==='cut'), p.bbox);
+  p.contourNorm=dc.path; p.holes=dc.holes;
+  recomputeCad(p);
 }
 async function loadDxf(text,name){
   const g=parseDxfGeom(text);
   if(!g){ toast('DXF konnte nicht gelesen werden: '+name); return; }
   const p={ teilenr:name.replace(/\.dxf$/i,''), source:'dxf', quelle:name, material:'1.4301 V2A',
-    dicke:2, menge:1, biegungen:0, gewicht:0, einstech:g.pierces, auftrag:'',
-    area_m2:g.area_m2, cutlen_mm:g.cutlen_mm, bbox:g.bbox, dxf:g.draw, laser_min:0, _autoLaser:true };
-  const _dc=dxfContourNorm(g.draw,g.bbox); p.contourNorm=_dc.path; p.holes=_dc.holes;
-  recomputeCad(p); PARTS.push(p);
-  toast(`DXF übernommen: ${p.teilenr} · ${fmt(g.bbox.w,0)}×${fmt(g.bbox.h,0)} mm`);
+    dicke:2, menge:1, biegungen:0, gewicht:0, einstech:1, auftrag:'',
+    area_m2:0, cutlen_mm:0, marklen_mm:0, bbox:g.bbox, dxf:g.draw, laser_min:0, _autoLaser:true };
+  recomputeDxfPart(p); PARTS.push(p);
+  toast(`DXF übernommen: ${p.teilenr} · ${fmt(g.bbox.w,0)}×${fmt(g.bbox.h,0)} mm${p.marklen_mm>0?' · '+fmt(p.marklen_mm,0)+' mm Gravur':''}`);
 }
 
 // ---------- STEP ----------
@@ -976,9 +996,16 @@ function dxfPathD(draw){
   }
   return d;
 }
+// Farben je Bearbeitung: Schneiden rot, Gravieren blau, Ignoriert grau gestrichelt
+const KIND_COLOR={cut:'#c00000', mark:'#1f6feb', skip:'#9a9aa0'};
 function dxfThumbSvg(p){
   const {minX,minY,w,h}=p.bbox; const pad=Math.max(w,h)*0.08||2; const sw=Math.max(w,h)/26||1;
-  return `<svg viewBox="${minX-pad} ${-(minY+h)-pad} ${w+2*pad} ${h+2*pad}" preserveAspectRatio="xMidYMid meet"><path d="${dxfPathD(p.dxf)}" fill="none" stroke="#c00000" stroke-width="${sw}" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+  let paths='';
+  for(const kind of ['cut','mark','skip']){
+    const sel=p.dxf.filter(e=>(e.kind||'cut')===kind); if(!sel.length) continue;
+    paths+=`<path d="${dxfPathD(sel)}" fill="none" stroke="${KIND_COLOR[kind]}" stroke-width="${kind==='cut'?sw:sw*0.7}"${kind==='skip'?` stroke-dasharray="${sw*2} ${sw*2}"`:''} stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  return `<svg viewBox="${minX-pad} ${-(minY+h)-pad} ${w+2*pad} ${h+2*pad}" preserveAspectRatio="xMidYMid meet">${paths}</svg>`;
 }
 function makeStepThumb(p){
   if(p._thumb!==undefined) return p._thumb;
@@ -1018,7 +1045,7 @@ function renderPositions(){
     const matOpts=Object.keys(MATERIAL).sort().map(m=>`<option ${m===p.material?'selected':''}>${m}</option>`).join('')+(p.material in MATERIAL?'':`<option selected>${p.material}</option>`);
     const badge=`<span class="srcbadge ${p.source}">${p.source}</span>`;
     const sub = p.source==='step' ? `${fmt(p.gewicht,2)} kg · ${fmt(p.cutlen_mm||0,0)} mm · ${fmt(p.laser_min,2)} min · 3D`
-      : p.source==='dxf' ? `${fmt(p.gewicht,2)} kg · ${fmt(p.cutlen_mm,0)} mm · ${fmt(p.laser_min,2)} min`
+      : p.source==='dxf' ? `${fmt(p.gewicht,2)} kg · ${fmt(p.cutlen_mm,0)} mm${p.marklen_mm>0?' + '+fmt(p.marklen_mm,0)+' mm Gravur':''} · ${fmt(p.laser_min,2)} min`
       : `${fmt(p.gewicht,2)} kg · ${fmt(p.laser_min,2)} min${p.auftrag?' · '+p.auftrag:''}`;
     const viewBtn = (p.source==='step'||p.source==='dxf') ? `<button class="vbtn" data-view="${i}">👁 Ansehen</button>` : '';
     const w=p.walz||'egal';
@@ -1179,18 +1206,34 @@ function renderDxfView(body,p){
   svg.setAttribute('viewBox',`${minX-pad} ${-(minY+h)-pad} ${w+2*pad} ${h+2*pad}`);
   const g=document.createElementNS(ns,'g'); g.setAttribute('id','rotG');
   const cx=minX+w/2, cy=-(minY+h/2);
-  const path=document.createElementNS(ns,'path');
-  let d='';
-  for(const e of p.dxf){
-    if(e.t==='pl'){ e.pts.forEach((pt,k)=>{ d+=(k?'L':'M')+pt.x+' '+(-pt.y)+' '; }); if(e.closed)d+='Z '; }
-    else if(e.t==='circle'){ const r=e.r,c=e.c; d+=`M ${c.x-r} ${-c.y} a ${r} ${r} 0 1 0 ${2*r} 0 a ${r} ${r} 0 1 0 ${-2*r} 0 `; }
-    else if(e.t==='arc'){ const r=e.r,c=e.c; const x0=c.x+r*Math.cos(e.a0),y0=c.y+r*Math.sin(e.a0),x1=c.x+r*Math.cos(e.a1),y1=c.y+r*Math.sin(e.a1); let da=e.a1-e.a0;if(da<0)da+=2*Math.PI;const large=da>Math.PI?1:0; d+=`M ${x0} ${-y0} A ${r} ${r} 0 ${large} 0 ${x1} ${-y1} `; }
-  }
-  path.setAttribute('d',d); path.setAttribute('fill','none'); path.setAttribute('stroke','#c00000'); path.setAttribute('stroke-width',sw); path.setAttribute('stroke-linejoin','round');
-  g.appendChild(path); svg.appendChild(g); body.appendChild(svg);
+  // jede Kontur einzeln: klickbar, Bearbeitung umschaltbar (Schneiden → Gravieren → Ignorieren)
+  const KIND_NEXT={cut:'mark', mark:'skip', skip:'cut'};
+  const KIND_LABEL={cut:'Schneiden', mark:'Gravieren', skip:'Ignoriert'};
+  const styleFor=(path,kind)=>{
+    path.setAttribute('stroke',KIND_COLOR[kind]);
+    path.setAttribute('stroke-width',kind==='cut'?sw:sw*0.8);
+    if(kind==='skip') path.setAttribute('stroke-dasharray',`${sw*3} ${sw*3}`); else path.removeAttribute('stroke-dasharray');
+  };
+  p.dxf.forEach((e,i)=>{
+    if(!e.kind) e.kind='cut';
+    const d=dxfPathD([e]);
+    const vis=document.createElementNS(ns,'path');
+    vis.setAttribute('d',d); vis.setAttribute('fill','none'); vis.setAttribute('stroke-linejoin','round'); styleFor(vis,e.kind);
+    // breiter unsichtbarer Klickbereich darüber
+    const hit=document.createElementNS(ns,'path');
+    hit.setAttribute('d',d); hit.setAttribute('fill','none'); hit.setAttribute('stroke','rgba(0,0,0,0)');
+    hit.setAttribute('stroke-width',Math.max(sw*8, Math.max(w,h)/60)); hit.style.cursor='pointer';
+    hit.addEventListener('click',ev=>{ ev.stopPropagation();
+      e.kind=KIND_NEXT[e.kind]; styleFor(vis,e.kind);
+      recomputeDxfPart(p); renderPositions(); recalc();
+      toast(`Kontur ${i+1}: ${KIND_LABEL[e.kind]} · Schnitt ${fmt(p.cutlen_mm,0)} mm · Gravur ${fmt(p.marklen_mm||0,0)} mm`);
+    });
+    g.appendChild(vis); g.appendChild(hit);
+  });
+  svg.appendChild(g); body.appendChild(svg);
   let rot=0; const apply=()=>g.setAttribute('transform',`rotate(${rot} ${cx} ${cy})`);
   addTools(body,[['↺ −90°',()=>{rot-=90;apply();}],['↻ +90°',()=>{rot+=90;apply();}],['Reset',()=>{rot=0;apply();}]]);
-  body.insertAdjacentHTML('beforeend','<div class="viewer-hint">DXF · 2D-Kontur</div>');
+  body.insertAdjacentHTML('beforeend',`<div class="viewer-hint">DXF · Kontur anklicken zum Umschalten: <b style="color:#ff7b7b">Schneiden</b> → <b style="color:#7fb3ff">Gravieren</b> → <b style="color:#bbb">Ignorieren</b></div>`);
 }
 
 function renderStepView(body,p){
