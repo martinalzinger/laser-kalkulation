@@ -84,6 +84,9 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
 - **Cache-Busting:** In `index.html` sind `app.js?v=…` und `parser.js?v=…` versioniert. Bei **jedem
   Deploy die Versionsnummer hochzählen** (z. B. `20260609b`→`20260609c`), sonst lädt der Browser/CDN evtl.
   die alte Datei trotz `Strg`+`F5`.
+- **Sichtbare App-Version:** Unten in der Bottom-Bar steht `<span class="appver">v1</span>`. Bei jedem
+  Deploy mit Funktionsänderung **hochzählen** (v1→v2…) — daran erkennt der Nutzer sofort, ob er die
+  aktuelle Version vor sich hat.
 - Veröffentlichen: Änderungen committen und `git push origin main`. GitHub Pages baut automatisch
   (~1–2 min). Danach prüfen, dass die Datei live ist, und im Browser `Strg`+`F5`.
   Alternativ Doppelklick auf `Start_Laser-Kalkulation.bat` (committet + pusht automatisch).
