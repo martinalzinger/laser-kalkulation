@@ -1115,7 +1115,10 @@ async function loadStep(buf,name){
     let _fl = unrollCylindrical(meshes, dicke, _blankA);   // gerollte Teile zuerst (zuverlässig)
     if(!_fl){ try{ if(_m0&&_m0.brep_faces&&_m0.index) _fl=unfoldSurface(_m0.attributes.position.array,_m0.index.array,_m0.brep_faces,dicke,_blankA); }catch(e){ console.warn('unfold',e); } }
     _fl = _fl || dominantFaceFlat(meshes, nrm);
-    if(_fl && _fl.w>0 && _fl.h>0){ p._flatNorm=_fl.path; p._flatW=_fl.w; p._flatH=_fl.h; }
+    // Abwicklungs-Zeichnung nur übernehmen, wenn sie ungefähr die echte Blechfläche abdeckt.
+    // Sonst (z. B. nicht-zylindrisches Biegeteil → nur schmale Teilfläche erkannt) Rechteck zeichnen.
+    const _flOK = _fl && _fl.w>0 && _fl.h>0 && (!_blankA || _fl.w*_fl.h >= 0.5*_blankA);
+    if(_flOK){ p._flatNorm=_fl.path; p._flatW=_fl.w; p._flatH=_fl.h; }
     recomputeCad(p); PARTS.push(p);
     toast(`STEP: ${p.teilenr} · ${fmt(dims[0],1)} mm · ${matRaw?('Werkstoff '+p.material):'kein Werkstoff in Datei → '+p.material}· ${bends} Biegung(en)`);
   } finally { hideLoad(); }

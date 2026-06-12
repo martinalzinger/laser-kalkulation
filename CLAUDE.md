@@ -29,8 +29,10 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   **Gezeichnet** (`p._flatNorm`, unverzerrt mittig im Slot): erst **echte Abwicklung gerollter/gebogener
   Teile** (`unrollCylindrical` – Außenhaut über den Querschnitt-Bogen aufrollen, alle Ausschnitte, gegen
   Blechfläche geprüft; z. B. 0011813_1 → 1462×334 mm, 25 Löcher, 99 % Treffer), sonst **größte
-  zusammenhängende flache Fläche** (`dominantFaceFlat`). Bei nicht-zylindrischen Bügeln zeigt der Fallback
-  nur das Hauptblech (Voll-Abwicklung verzweigter Teile nicht umgesetzt).
+  zusammenhängende flache Fläche** (`dominantFaceFlat`). **Die Abwicklungs-Zeichnung wird gegen die echte
+  Blechfläche geprüft** (`_fl.w·_fl.h ≥ 0,5·Vol/Dicke`); deckt sie die Blechfläche nicht ab (nicht-zylindr.
+  Biegeteil → nur schmale Teilfläche erkannt, z. B. 7×1977 statt 1990×113), wird `_flatNorm` verworfen und
+  im Slot ein **sauberes Rechteck** (Abwicklungsmaß) gezeichnet statt eines degenerierten Strichs.
   **Hinweis:** STEP = nur 3D-Geometrie → Biegungszahl (`detectBends`) und Abwicklung sind **Schätzungen**;
   exakt nur via Biegeprogramm (JUPIDU/HTML) bzw. DXF-Zuschnitt.
 - **Echte Abwicklung aus STEP (B-Rep):** Der STEP-Import (`occt.ReadStepFile`) liefert `brep_faces`
