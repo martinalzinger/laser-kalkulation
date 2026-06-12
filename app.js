@@ -24,13 +24,13 @@ function density(m){ for(const k in DENSITY){ if(m&&m.includes(k)) return DENSIT
 // Schnittgeschwindigkeit mm/min (TruLaser 5030, 6-kW-Faserlaser) je Werkstoffgruppe/Dicke.
 // STAHL 1–15 mm = ECHTE TruTops-LTT-Werte (Konturart "Gross", S355MC, 6000 W, TC41) aus der hauseigenen
 // Schneidtabelle gemessen. Bis 5 mm STICKSTOFF: 1mm 51 · 2mm 30,5 · 3mm 17 · 4mm 9,5 · 5mm 7 m/min.
-// Ab 6 mm SAUERSTOFF: 6mm 3 · 8mm 2,6 · 10mm 2,38 · 12mm 2 · 15mm 1,62 m/min. 20/25 mm extrapoliert.
+// Ab 6 mm SAUERSTOFF: 6mm 3 · 8mm 2,6 · 10mm 2,38 · 12mm 2 · 15mm 1,62 · 20mm 1,2 · 25mm 0,94 m/min.
 // Wichtig: Das sind GROSSKONTUR-Werte. Kleine Konturen/Löcher fahren langsamer → siehe konturFactor().
 // Edelstahl/Alu = Richtwerte (verankert am realen Plan, 2 mm Edelstahl ≈ 19 m/min); echte LTT folgen.
 const SPEED = {
-  stahl:     {gross:true, maxT:25,  // ganzer Bereich echte Großkontur-Werte → Konturgröße wird verrechnet
+  stahl:     {gross:true, maxT:25,  // 1–25 mm komplett echte Großkontur-Werte → Konturgröße wird verrechnet
               t:[1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25],
-              v:[51000,40000,30500,23000,17000,9500,7000,3000,2600,2380,2000,1620,1100,750]},
+              v:[51000,40000,30500,23000,17000,9500,7000,3000,2600,2380,2000,1620,1200,940]},
   edelstahl: {t:[1,1.5,2,3,4,5,6,8,10,12,15,20],
               v:[30000,24000,19000,10500,6500,4500,3400,2000,1300,900,550,300]},
   alu:       {t:[1,2,3,4,5,6,8,10,12,15],

@@ -84,8 +84,8 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   (inkl. Verschnitt). Große + kleine Teile derselben Gruppe teilen sich also die Tafeln/Kosten.
 - **Schnittgeschwindigkeit (`SPEED`, `effCutSpeed`):** Stahl 1–5 mm = echte TruTops-LTT-Werte (Konturart
   „Gross", S355MC/6 kW/TC41, aus der hauseigenen Schneidtabelle gemessen). Bis 5 mm N2: 1mm 51 · 2mm 30,5 ·
-  3mm 17 · 4mm 9,5 · 5mm 7 m/min; ab 6 mm O2: 6mm 3 · 8mm 2,6 · 10mm 2,38 · 12mm 2 · 15mm 1,62 m/min
-  (20/25 mm extrapoliert). Edelstahl/Alu noch Richtwerte
+  3mm 17 · 4mm 9,5 · 5mm 7 m/min; ab 6 mm O2: 6mm 3 · 8mm 2,6 · 10mm 2,38 · 12mm 2 · 15mm 1,62 · 20mm 1,2 ·
+  25mm 0,94 m/min (Stahl 1–25 mm komplett echt). Edelstahl/Alu noch Richtwerte
   (2 mm Edelstahl ≈ 19 m/min am realen Plan). **Konturgröße:** Die Tabellenwerte sind GROSSKONTUR-Tempo —
   TruTops fährt kleine Konturen/Löcher langsamer. `konturFactor` rechnet das über den mittleren
   Konturumfang (Schnitt ÷ Konturen) **und** die Gesamtschnittlänge auf 0,22…1,0 herunter; nur bei
