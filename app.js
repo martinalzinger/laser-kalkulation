@@ -1500,7 +1500,7 @@ function openAngebot(){
   const w=document.createElement('div'); w.id='angebot';
   w.innerHTML=`
    <div class="angbar"><button class="back" id="angBack">‹ Zurück</button><button class="print" id="angPrint">Drucken / PDF</button></div>
-   <div class="printhead"><img src="logo.png" alt=""><div class="ph-co"><b>Alzinger Maschinenbau GmbH</b><span>Am Gewerbring 14 · 84069 Schierling</span></div><span class="ph-nr">${nr&&nr!=='Angebot'?'Angebot '+nr:'Angebot'} · ${datum}</span></div>
+   <div class="printhead"><img src="logo.png" alt="Alzinger Maschinenbau"><span class="ph-nr">${nr&&nr!=='Angebot'?'Angebot '+nr:'Angebot'} · ${datum}</span></div>
    <div class="ang">
      <div class="head">
        <div style="display:flex;gap:13px;align-items:center">

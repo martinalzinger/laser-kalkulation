@@ -219,22 +219,19 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
   .angbar{display:none!important}
   body{padding:0;background:#fff}
   #angebot{position:static;overflow:visible;inset:auto}
-  .ang{max-width:none;padding:48mm 14mm 14mm}    /* oben Platz für die große fixe Kopfzeile */
+  .ang{max-width:none;padding:34mm 14mm 14mm}    /* oben Platz für die fixe Kopfzeile */
   .ang .head{display:none}                        /* großer Briefkopf entfällt – Kopfzeile ist der Briefkopf */
   .ang .basis{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ang .opt,.ang .terms,.ang .sums,.ang .basis{break-inside:avoid}
   /* mehr Zeilenabstand unterhalb der Kopfzeile (Anschreiben/Kundenadresse) */
   .ang .lead{line-height:2.1;margin-bottom:30px}
   .ang>div[style*="font-size:13.5px"]{line-height:1.9;margin-bottom:30px!important}
-  /* Kopfzeile auf JEDER Druckseite (position:fixed wiederholt sich pro Seite) – doppelt so groß */
-  .printhead{display:flex;align-items:center;gap:20px;position:fixed;top:0;left:0;right:0;height:36mm;
+  /* Kopfzeile auf JEDER Druckseite (position:fixed wiederholt sich pro Seite) – nur Logo + Angebot/Datum */
+  .printhead{display:flex;align-items:center;position:fixed;top:0;left:0;right:0;height:24mm;
     padding:0 14mm;background:#fff;border-bottom:2px solid var(--ink);
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .printhead img{height:20mm;width:auto}
-  .printhead .ph-co{display:flex;flex-direction:column;line-height:1.4}
-  .printhead .ph-co b{font-size:24px;color:var(--ink)}
-  .printhead .ph-co span{font-size:15px;color:var(--muted)}
-  .printhead .ph-nr{margin-left:auto;font-family:var(--mono);font-size:14px;color:var(--muted)}
+  .printhead img{height:14mm;width:auto}
+  .printhead .ph-nr{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted)}
 }
 
 /* CAD viewer */
@@ -414,7 +411,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
       <button class="btn g" id="btnCsv">⤓ CSV</button>
       <button class="btn p" id="btnAngebot">Angebot ansehen ›</button>
     </div>
-    <span class="appver" title="App-Version">v21</span>
+    <span class="appver" title="App-Version">v22</span>
   </div>
 </div>
 
@@ -463,7 +460,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 <script src="lib/occt-import-js.js"></script>
 <script src="lib/jszip.min.js"></script>
 <!-- Versionsnummer (?v=...) bei jedem Deploy hochzählen, damit der Browser-Cache die neue Datei lädt -->
-<script src="parser.js?v=20260609zd"></script>
-<script src="app.js?v=20260609zd"></script>
+<script src="parser.js?v=20260609ze"></script>
+<script src="app.js?v=20260609ze"></script>
 </body>
 </html>
