@@ -21,12 +21,18 @@ const MATERIAL = {'S235':1.30,'S355':1.50,'1.4301 V2A':4.90,'V4A':6.50,'AlMg3':4
 const DENSITY = {'1.4':7900,'V2A':7900,'V4A':7900,'S2':7850,'S3':7850,'Hardox':7850,'AlMg':2700,'Al':2700}; // kg/m³ je Präfix
 function density(m){ for(const k in DENSITY){ if(m&&m.includes(k)) return DENSITY[k]; } return 7850; }
 
-// Schnittgeschwindigkeit mm/min (Richtwerte Faserlaser 6 kW, TruLaser 5030) je Werkstoffgruppe/Dicke
-// Richtwerte 6-kW-Faserlaser (mm/min), verankert am Plan: 2 mm Edelstahl ~19 m/min
+// Schnittgeschwindigkeit mm/min (TruLaser 5030, 6-kW-Faserlaser) je Werkstoffgruppe/Dicke.
+// Abgestimmt auf die hauseigene Schneidtabelle (Gas je Dicke!) + 6-kW-Referenzwerte:
+//  - Stahl (S355MC/S700/Hardox): bis 5 mm STICKSTOFF (schnell), ab 6 mm SAUERSTOFF (Sprung auf O2-Tempo)
+//  - Edelstahl: durchgehend N2, verankert am realen Plan (2 mm ≈ 19 m/min)
+//  - Praxiswerte, nicht Prospekt-Maxima; Feinabgleich über Laser-Overhead in den Einstellungen
 const SPEED = {
-  stahl:     {t:[1,2,3,4,5,6,8,10,12,15,20,25], v:[9500,7000,4800,4000,3300,2800,2000,1700,1400,1000,650,450]},
-  edelstahl: {t:[1,2,3,4,5,6,8,10,12,15,20],    v:[38000,19000,9500,5500,3800,2700,1500,950,650,400,250]},
-  alu:       {t:[1,2,3,4,5,6,8,10,12,15],       v:[32000,16000,9000,5000,3500,2500,1300,800,500,320]},
+  stahl:     {t:[1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25],
+              v:[20000,18000,16000,13000,11000,7500,5500,2800,2200,1900,1600,1200,800,500]},
+  edelstahl: {t:[1,1.5,2,3,4,5,6,8,10,12,15,20],
+              v:[30000,24000,19000,10500,6500,4500,3400,2000,1300,900,550,300]},
+  alu:       {t:[1,2,3,4,5,6,8,10,12,15],
+              v:[24000,13500,8500,5500,4000,3000,1800,1100,700,420]},
 };
 function speedGroup(m){ if(!m) return 'stahl'; if(/1\.4|V2A|V4A/i.test(m)) return 'edelstahl'; if(/^Al|AlMg/i.test(m)) return 'alu'; return 'stahl'; }
 function speedFor(m,t){ const g=SPEED[speedGroup(m)],ts=g.t,vs=g.v; if(t<=ts[0])return vs[0]; if(t>=ts[ts.length-1])return vs[vs.length-1];
