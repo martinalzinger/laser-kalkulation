@@ -208,30 +208,41 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .ang .terms h4{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--red);margin-bottom:6px}
 .ang .terms p{font-size:12.5px;color:var(--muted);line-height:1.5}
 .ang .fine{margin-top:26px;border-top:1px solid var(--line);padding-top:14px;font-size:11px;color:var(--faint);line-height:1.6}
-.ang .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--ink);padding-bottom:16px;margin-bottom:24px}
-.ang .head .co b{font-size:17px}.ang .head .co small{display:block;color:var(--muted);line-height:1.5;margin-top:4px}
-.ang .head .meta{text-align:right;font-size:12.5px;color:var(--muted)}
-.ang .head .meta b{display:block;font-size:20px;color:var(--ink)}
-.printhead{display:none}   /* nur im Druck sichtbar – wiederholt sich auf jeder Seite */
+/* --- Briefkopf im Konfigurator-Stil --- */
+.ang .accent{display:flex;gap:10px;margin-bottom:36px}
+.ang .accent i{height:5px;border-radius:2px;display:block}
+.ang .accent .a1{flex:0 0 130px;background:var(--red)}
+.ang .accent .a2{flex:1;background:#46505e}
+.ang .accent .a3{flex:0 0 150px;background:var(--gold)}
+.ang .lethead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:34px}
+.ang .lethead img{height:36px;width:auto;display:block;margin-bottom:13px}
+.ang .le-co b{display:block;font-size:15px;font-weight:800;color:var(--ink)}
+.ang .le-co span{display:block;font-size:12px;color:var(--muted);line-height:1.6}
+.ang .le-date{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.04em;white-space:nowrap}
+.ang .an-label{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.ang .an-addr{font-size:14px;line-height:1.75;margin-bottom:36px}
+.ang .ang-title{font-size:40px;font-weight:800;letter-spacing:.01em;margin:0;color:var(--ink);line-height:1}
+.ang .ang-title::after{content:"";display:block;width:54px;height:4px;background:var(--red);border-radius:2px;margin:16px 0}
+.ang .ang-sub{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--red);font-weight:600;margin-bottom:26px}
+.printhead{display:none}   /* nur im Druck sichtbar – Akzentbalken auf jeder Seite */
 @page{size:A4;margin:0}   /* Rand 0 = Browser druckt keine Kopf-/Fußzeile (Titel/URL/Seitenzahl) */
 @media print{
   body>*:not(#angebot){display:none!important}   /* nur das Angebot drucken, nicht die App dahinter */
   .angbar{display:none!important}
   body{padding:0;background:#fff}
   #angebot{position:static;overflow:visible;inset:auto}
-  .ang{max-width:none;padding:34mm 14mm 14mm}    /* oben Platz für die fixe Kopfzeile */
-  .ang .head{display:none}                        /* großer Briefkopf entfällt – Kopfzeile ist der Briefkopf */
+  .ang{max-width:none;padding:18mm 16mm 14mm}
+  .ang .accent{display:none}                      /* Akzent kommt aus der fixen Kopfzeile (jede Seite) */
   .ang .basis{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .ang .opt,.ang .terms,.ang .sums,.ang .basis{break-inside:avoid}
-  /* mehr Zeilenabstand unterhalb der Kopfzeile (Anschreiben/Kundenadresse) */
-  .ang .lead{line-height:2.1;margin-bottom:30px}
-  .ang>div[style*="font-size:13.5px"]{line-height:1.9;margin-bottom:30px!important}
-  /* Kopfzeile auf JEDER Druckseite (position:fixed wiederholt sich pro Seite) – nur Logo + Angebot/Datum */
-  .printhead{display:flex;align-items:center;position:fixed;top:0;left:0;right:0;height:24mm;
-    padding:0 14mm;background:#fff;border-bottom:2px solid var(--ink);
+  .ang .opt,.ang .terms,.ang .sums,.ang .basis,.ang .lethead{break-inside:avoid}
+  .ang .lead,.ang .an-addr{line-height:1.9}
+  /* Akzentbalken-Kopfzeile auf JEDER Druckseite (position:fixed wiederholt sich pro Seite) */
+  .printhead{display:flex;gap:3mm;position:fixed;top:0;left:0;right:0;height:9mm;padding:5mm 16mm 0;background:#fff;
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .printhead img{height:14mm;width:auto}
-  .printhead .ph-nr{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted)}
+  .printhead i{height:1.4mm;border-radius:1mm;display:block}
+  .printhead .a1{flex:0 0 34mm;background:var(--red)}
+  .printhead .a2{flex:1;background:#46505e}
+  .printhead .a3{flex:0 0 40mm;background:var(--gold)}
 }
 
 /* CAD viewer */
@@ -411,7 +422,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
       <button class="btn g" id="btnCsv">⤓ CSV</button>
       <button class="btn p" id="btnAngebot">Angebot ansehen ›</button>
     </div>
-    <span class="appver" title="App-Version">v23</span>
+    <span class="appver" title="App-Version">v24</span>
   </div>
 </div>
 
@@ -460,7 +471,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 <script src="lib/occt-import-js.js"></script>
 <script src="lib/jszip.min.js"></script>
 <!-- Versionsnummer (?v=...) bei jedem Deploy hochzählen, damit der Browser-Cache die neue Datei lädt -->
-<script src="parser.js?v=20260609zf"></script>
-<script src="app.js?v=20260609zf"></script>
+<script src="parser.js?v=20260609zg"></script>
+<script src="app.js?v=20260609zg"></script>
 </body>
 </html>

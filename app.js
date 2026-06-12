@@ -1500,16 +1500,19 @@ function openAngebot(){
   const w=document.createElement('div'); w.id='angebot';
   w.innerHTML=`
    <div class="angbar"><button class="back" id="angBack">‹ Zurück</button><button class="print" id="angPrint">Drucken / PDF</button></div>
-   <div class="printhead"><img src="logo.png" alt="Alzinger Maschinenbau"><span class="ph-nr">${nr&&nr!=='Angebot'?'Angebot '+nr:'Angebot'} · ${datum}</span></div>
+   <div class="printhead"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
    <div class="ang">
-     <div class="head">
-       <div style="display:flex;gap:13px;align-items:center">
-         <img src="logo.png" style="height:40px;width:auto" alt="Alzinger Maschinenbau">
-         ${verk?`<div class="co"><small>Verkäufer: ${verk}</small></div>`:''}
+     <div class="accent"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+     <div class="lethead">
+       <div class="le-left">
+         <img src="logo.png" alt="Alzinger Maschinenbau">
+         <div class="le-co"><b>Maschinenbau GmbH</b><span>Am Gewerbering 14 · D-84069 Schierling</span><span>www.alzinger-maschinenbau.de</span></div>
        </div>
-       <div class="meta">${nr&&nr!=='Angebot'?'Angebot<br><b>'+nr+'</b>':'<b>Angebot</b>'}<br>${datum}${g('d_ort')?' · '+g('d_ort'):''}</div>
+       <div class="le-date">${datum}${g('d_ort')?'<br>'+g('d_ort'):''}</div>
      </div>
-     ${kundeAdr?`<div style="margin-bottom:20px;font-size:13.5px">${kundeAdr}</div>`:''}
+     ${kundeAdr?`<div class="an-label">An</div><div class="an-addr">${kundeAdr}</div>`:''}
+     <h1 class="ang-title">Angebot</h1>
+     <div class="ang-sub">Laser- &amp; Abkantteile${nr&&nr!=='Angebot'?' · '+nr:''}${verk?' · '+verk:''}</div>
      <p class="lead">Sehr geehrte Damen und Herren,<br><br>wir bedanken uns herzlich für Ihr Interesse und unterbreiten Ihnen gerne – freibleibend – das nachfolgende Angebot über die nachstehenden Laser- &amp; Abkantteile.</p>
      <div class="basis"><div><div style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#cfae6e">Auftragsumfang</div><div class="t">${PARTS.length} Positionen · ${totalStk()} Teile</div><div style="font-family:var(--mono);font-size:11px;color:#bdbab2;margin-top:6px">${metaSrc}</div></div><div class="p">${eur(total)}</div></div>
      <div class="optgroup"><div class="ogh">Positionen</div>${opts}</div>
