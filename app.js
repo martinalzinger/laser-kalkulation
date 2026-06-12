@@ -22,18 +22,31 @@ const DENSITY = {'1.4':7900,'V2A':7900,'V4A':7900,'S2':7850,'S3':7850,'Hardox':7
 function density(m){ for(const k in DENSITY){ if(m&&m.includes(k)) return DENSITY[k]; } return 7850; }
 
 // Schnittgeschwindigkeit mm/min (TruLaser 5030, 6-kW-Faserlaser) je Werkstoffgruppe/Dicke.
-// Abgestimmt auf die hauseigene Schneidtabelle (Gas je Dicke!) + 6-kW-Referenzwerte:
-//  - Stahl (S355MC/S700/Hardox): bis 5 mm STICKSTOFF (schnell), ab 6 mm SAUERSTOFF (Sprung auf O2-Tempo)
-//  - Edelstahl: durchgehend N2, verankert am realen Plan (2 mm ≈ 19 m/min)
-//  - Praxiswerte, nicht Prospekt-Maxima; Feinabgleich über Laser-Overhead in den Einstellungen
+// STAHL 1–5 mm = ECHTE TruTops-LTT-Werte (Konturart "Gross", S355MC, N2, 6000 W, TC41) aus der
+// hauseigenen Schneidtabelle gemessen: 1mm 51 · 2mm 30,5 · 3mm 17 · 4mm 9,5 · 5mm 7 m/min.
+// Ab 6 mm schaltet die Schneidtabelle auf SAUERSTOFF (langsamer) – dort noch Richtwerte.
+// Wichtig: Das sind GROSSKONTUR-Werte. Kleine Konturen/Löcher fahren langsamer → siehe konturFactor().
+// Edelstahl/Alu = Richtwerte (verankert am realen Plan, 2 mm Edelstahl ≈ 19 m/min); echte LTT folgen.
 const SPEED = {
-  stahl:     {t:[1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25],
-              v:[20000,18000,16000,13000,11000,7500,5500,2800,2200,1900,1600,1200,800,500]},
+  stahl:     {gross:true, maxT:5,   // bis 5 mm echte Großkontur-Werte → Konturgröße wird verrechnet
+              t:[1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25],
+              v:[51000,40000,30500,23000,17000,9500,7000,2800,2200,1900,1600,1200,800,500]},
   edelstahl: {t:[1,1.5,2,3,4,5,6,8,10,12,15,20],
               v:[30000,24000,19000,10500,6500,4500,3400,2000,1300,900,550,300]},
   alu:       {t:[1,2,3,4,5,6,8,10,12,15],
               v:[24000,13500,8500,5500,4000,3000,1800,1100,700,420]},
 };
+// Konturgrößen-Faktor: TruTops fährt Große/Mittlere/Kleine Konturen unterschiedlich schnell.
+// Die Tabelle oben hält die GROSSKONTUR-Geschwindigkeit; ein Teil mit vielen kleinen Löchern fährt
+// im Schnitt langsamer. Schätzung über den mittleren Konturumfang (Schnittlänge ÷ Konturen):
+// große, einfache Teile ≈ voll (Faktor 1), kleine/gelochte Teile bis Faktor 0,22.
+function konturFactor(p){
+  const n=Math.max(1, p.einstech||1);
+  const avg=(p.cutlen_mm||0)/n;                  // mittlerer Konturumfang (mm) – viele kleine Löcher → klein
+  const fA=avg/380;                              // Konturgröße: kleine/gelochte Teile fahren langsamer
+  const fB=(p.cutlen_mm||0)/2500;                // Gesamtschnitt: kurze/kleine Teile erreichen die Topspeed nicht
+  return Math.min(1, Math.max(0.22, Math.min(fA, fB)));
+}
 function speedGroup(m){ if(!m) return 'stahl'; if(/1\.4|V2A|V4A/i.test(m)) return 'edelstahl'; if(/^Al|AlMg/i.test(m)) return 'alu'; return 'stahl'; }
 function speedFor(m,t){ const g=SPEED[speedGroup(m)],ts=g.t,vs=g.v; if(t<=ts[0])return vs[0]; if(t>=ts[ts.length-1])return vs[vs.length-1];
   for(let i=1;i<ts.length;i++){ if(t<=ts[i]){ const f=(t-ts[i-1])/(ts[i]-ts[i-1]); return vs[i-1]+f*(vs[i]-vs[i-1]); } } return vs[vs.length-1]; }
@@ -106,24 +119,32 @@ const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
 // Laserzeit-Schätzung (min) aus Schneidlänge + Gravur + Einstichen (DXF & STEP)
 const markSpeed=()=>Math.max(1000,(PARAMS.grav_m||20)*1000);  // mm/min Gravieren (einstellbar, kalibriert an TruTops)
+// Effektive Schnittgeschwindigkeit: bei Gross-basierten Tabellen (Stahl bis maxT) auf die
+// Konturgröße des Teils umgerechnet, sonst direkt der (bereits effektive) Tabellenwert.
+function effCutSpeed(p){
+  const g=SPEED[speedGroup(p.material)], t=p.dicke||1;
+  let v=speedFor(p.material,t);
+  if(g.gross && t<=(g.maxT||0)) v*=konturFactor(p);
+  return Math.max(150,v);
+}
 function estimateLaserMin(p){
-  const v=speedFor(p.material,p.dicke||1);
-  const beam=(p.cutlen_mm||0)/Math.max(150,v)
-           + (p.marklen_mm||0)/markSpeed();                 // Beam-on (min): Schnitt + Gravur
+  const v=effCutSpeed(p);
+  const cutBeam=(p.cutlen_mm||0)/v;                         // Schneiden (min)
+  const grav=(p.marklen_mm||0)/markSpeed();                 // Gravieren (min) – durchgehend, ohne Schneid-Overhead
   const pierce=(p.einstech||0)*pierceTime(p.dicke||1)/60;   // Einstechzeit
-  const rapid=beam*0.10;                                    // Eilgang ~10%
-  return +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
+  const rapid=cutBeam*0.10;                                 // Eilgang ~10% (zwischen Schnittkonturen)
+  return +((cutBeam+pierce+rapid)*PARAMS.laser_overhead + grav*1.05).toFixed(2);
 }
 // Zusammensetzung der Laserzeit als Text (für die Kostenaufschlüsselung)
 function laserTimeDetail(p){
   if(p.source==='pdf') return `Laserzeit <b>${fmtZeit(p.laser_min*60)}/St</b> – exakt aus TruTops-Plan`;
   if(!p._autoLaser)    return `Laserzeit <b>${fmtZeit(p.laser_min*60)}/St</b> – manuell gesetzt`;
-  const ov=PARAMS.laser_overhead, v=speedFor(p.material,p.dicke||1);
-  const cut=(p.cutlen_mm||0)/Math.max(150,v)*ov*60;
-  const grav=(p.marklen_mm||0)/markSpeed()*ov*60;
+  const ov=PARAMS.laser_overhead, v=effCutSpeed(p);
+  const cut=(p.cutlen_mm||0)/v*ov*60;
+  const grav=(p.marklen_mm||0)/markSpeed()*1.05*60;
   const pi=(p.einstech||0)*pierceTime(p.dicke||1)*ov;
-  const rap=((p.cutlen_mm||0)/Math.max(150,v)+(p.marklen_mm||0)/markSpeed())*0.10*ov*60;
-  let s=`Laserzeit <b>${fmtZeit(p.laser_min*60)}/St</b> = Schneiden ${fmtZeit(cut)} (${fmt(p.cutlen_mm,0)} mm @ ${fmt(v/1000,1)} m/min)`;
+  const rap=(p.cutlen_mm||0)/v*0.10*ov*60;
+  let s=`Laserzeit <b>${fmtZeit(p.laser_min*60)}/St</b> = Schneiden ${fmtZeit(cut)} (${fmt(p.cutlen_mm,0)} mm @ ${fmt(v/1000,1)} m/min eff.)`;
   if((p.marklen_mm||0)>0) s+=` + Gravur ${fmtZeit(grav)} (${fmt(p.marklen_mm,0)} mm @ ${fmt(markSpeed()/1000,0)} m/min)`;
   s+=` + Einstiche ${fmtZeit(pi)} (${p.einstech}×) + Eilgang ${fmtZeit(rap)} · inkl. Overhead ×${fmt(ov,1)}`;
   return s;

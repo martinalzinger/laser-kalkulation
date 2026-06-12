@@ -82,6 +82,15 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   (Plan ist bereits geschachtelt).
 - **Materialkosten = real benötigte Tafeln × Tafelgewicht × €/kg**, auf die Teile nach Gewicht verteilt
   (inkl. Verschnitt). Große + kleine Teile derselben Gruppe teilen sich also die Tafeln/Kosten.
+- **Schnittgeschwindigkeit (`SPEED`, `effCutSpeed`):** Stahl 1–5 mm = echte TruTops-LTT-Werte (Konturart
+  „Gross", S355MC/N2/6 kW/TC41, aus der hauseigenen Schneidtabelle gemessen: 1mm 51 · 2mm 30,5 · 3mm 17 ·
+  4mm 9,5 · 5mm 7 m/min); ab 6 mm Sauerstoff (langsamer, noch Richtwerte). Edelstahl/Alu noch Richtwerte
+  (2 mm Edelstahl ≈ 19 m/min am realen Plan). **Konturgröße:** Die Tabellenwerte sind GROSSKONTUR-Tempo —
+  TruTops fährt kleine Konturen/Löcher langsamer. `konturFactor` rechnet das über den mittleren
+  Konturumfang (Schnitt ÷ Konturen) **und** die Gesamtschnittlänge auf 0,22…1,0 herunter; nur bei
+  Gross-basierten Gruppen (`SPEED.stahl.gross`, bis `maxT`) angewandt. Gravur läuft mit `grav_m`
+  (Default 20 m/min) **ohne** Schneid-Overhead (Faktor 1,05), Schneiden/Einstiche/Eilgang mit
+  `laser_overhead`. Dünne gravur-lastige Teile bleiben Schätzung (echte TruTops-Werte teils widersprüchlich).
 - Datenquellen je Teil: **TruTops-Plan** → exakte Laserzeit; **STEP** → Kontur/Gewicht/Schneidlänge/
   Dicke (Dicke = Abstand Ober-/Unterseite der Hauptfläche, auch bei Biegeteilen); **Biegeprogramm
   (JUPIDU/HTML)** → exakte Biegungen/Material/Dicke, Zuordnung über die Teile-Nr.
