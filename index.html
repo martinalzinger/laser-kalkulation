@@ -212,13 +212,13 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .ang .head .co b{font-size:17px}.ang .head .co small{display:block;color:var(--muted);line-height:1.5;margin-top:4px}
 .ang .head .meta{text-align:right;font-size:12.5px;color:var(--muted)}
 .ang .head .meta b{display:block;font-size:20px;color:var(--ink)}
-@page{size:A4;margin:14mm}
+@page{size:A4;margin:0}   /* Rand 0 = Browser druckt keine Kopf-/Fußzeile (Titel/URL/Seitenzahl) */
 @media print{
   body>*:not(#angebot){display:none!important}   /* nur das Angebot drucken, nicht die App dahinter */
   .angbar{display:none!important}
   body{padding:0;background:#fff}
   #angebot{position:static;overflow:visible;inset:auto}
-  .ang{max-width:none;padding:0}
+  .ang{max-width:none;padding:14mm}              /* Seitenrand liegt im Dokument statt im @page-Rand */
   .ang .basis{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ang .opt,.ang .terms,.ang .sums,.ang .basis{break-inside:avoid}
 }
@@ -400,7 +400,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
       <button class="btn g" id="btnCsv">⤓ CSV</button>
       <button class="btn p" id="btnAngebot">Angebot ansehen ›</button>
     </div>
-    <span class="appver" title="App-Version">v10</span>
+    <span class="appver" title="App-Version">v11</span>
   </div>
 </div>
 
@@ -449,7 +449,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 <script src="lib/occt-import-js.js"></script>
 <script src="lib/jszip.min.js"></script>
 <!-- Versionsnummer (?v=...) bei jedem Deploy hochzählen, damit der Browser-Cache die neue Datei lädt -->
-<script src="parser.js?v=20260609s"></script>
-<script src="app.js?v=20260609s"></script>
+<script src="parser.js?v=20260609t"></script>
+<script src="app.js?v=20260609t"></script>
 </body>
 </html>
