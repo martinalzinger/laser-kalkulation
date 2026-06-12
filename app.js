@@ -1500,14 +1500,14 @@ function openAngebot(){
   const w=document.createElement('div'); w.id='angebot';
   w.innerHTML=`
    <div class="angbar"><button class="back" id="angBack">‹ Zurück</button><button class="print" id="angPrint">Drucken / PDF</button></div>
-   <div class="printhead"><img src="logo.png" alt=""><span class="ph-co">Alzinger Maschinenbau GmbH</span><span class="ph-nr">${nr&&nr!=='Angebot'?'Angebot '+nr:'Angebot'} · ${datum}</span></div>
+   <div class="printhead"><img src="logo.png" alt=""><div class="ph-co"><b>Alzinger Maschinenbau GmbH</b><span>Am Gewerbring 14 · 84069 Schierling</span></div><span class="ph-nr">${nr&&nr!=='Angebot'?'Angebot '+nr:'Angebot'} · ${datum}</span></div>
    <div class="ang">
      <div class="head">
        <div style="display:flex;gap:13px;align-items:center">
          <img src="logo.png" style="height:48px;width:auto" alt="Alzinger Maschinenbau">
          <div class="co"><b>Alzinger Maschinenbau GmbH</b><small>Am Gewerbring 14 · 84069 Schierling${verk?'<br>Verkäufer: '+verk:''}</small></div>
        </div>
-       <div class="meta">Angebot<br><b>${nr}</b><br>${datum}${g('d_ort')?' · '+g('d_ort'):''}</div>
+       <div class="meta">${nr&&nr!=='Angebot'?'Angebot<br><b>'+nr+'</b>':'<b>Angebot</b>'}<br>${datum}${g('d_ort')?' · '+g('d_ort'):''}</div>
      </div>
      ${kundeAdr?`<div style="margin-bottom:20px;font-size:13.5px">${kundeAdr}</div>`:''}
      <p class="lead">Sehr geehrte Damen und Herren,<br><br>wir bedanken uns herzlich für Ihr Interesse und unterbreiten Ihnen gerne – freibleibend – das nachfolgende Angebot über die nachstehenden Laser- &amp; Abkantteile.</p>

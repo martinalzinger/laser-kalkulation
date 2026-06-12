@@ -219,15 +219,18 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
   .angbar{display:none!important}
   body{padding:0;background:#fff}
   #angebot{position:static;overflow:visible;inset:auto}
-  .ang{max-width:none;padding:24mm 14mm 14mm}    /* oben Platz für die fixe Kopfzeile */
+  .ang{max-width:none;padding:26mm 14mm 14mm}    /* oben Platz für die fixe Kopfzeile */
+  .ang .head{display:none}                        /* großer Briefkopf entfällt – Kopfzeile ist der Briefkopf */
   .ang .basis{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ang .opt,.ang .terms,.ang .sums,.ang .basis{break-inside:avoid}
   /* Kopfzeile auf JEDER Druckseite (position:fixed wiederholt sich pro Seite) */
-  .printhead{display:flex;align-items:center;gap:10px;position:fixed;top:0;left:0;right:0;height:16mm;
+  .printhead{display:flex;align-items:center;gap:11px;position:fixed;top:0;left:0;right:0;height:18mm;
     padding:0 14mm;background:#fff;border-bottom:1.5px solid var(--ink);
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .printhead img{height:9mm;width:auto}
-  .printhead .ph-co{font-weight:800;font-size:12px;color:var(--ink)}
+  .printhead img{height:10mm;width:auto}
+  .printhead .ph-co{display:flex;flex-direction:column;line-height:1.35}
+  .printhead .ph-co b{font-size:13px;color:var(--ink)}
+  .printhead .ph-co span{font-size:9.5px;color:var(--muted)}
   .printhead .ph-nr{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--muted)}
 }
 
@@ -408,7 +411,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
       <button class="btn g" id="btnCsv">⤓ CSV</button>
       <button class="btn p" id="btnAngebot">Angebot ansehen ›</button>
     </div>
-    <span class="appver" title="App-Version">v19</span>
+    <span class="appver" title="App-Version">v20</span>
   </div>
 </div>
 
@@ -457,7 +460,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 <script src="lib/occt-import-js.js"></script>
 <script src="lib/jszip.min.js"></script>
 <!-- Versionsnummer (?v=...) bei jedem Deploy hochzählen, damit der Browser-Cache die neue Datei lädt -->
-<script src="parser.js?v=20260609zb"></script>
-<script src="app.js?v=20260609zb"></script>
+<script src="parser.js?v=20260609zc"></script>
+<script src="app.js?v=20260609zc"></script>
 </body>
 </html>
