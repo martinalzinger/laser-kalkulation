@@ -1497,6 +1497,7 @@ function openAngebot(){
   const w=document.createElement('div'); w.id='angebot';
   w.innerHTML=`
    <div class="angbar"><button class="back" id="angBack">‹ Zurück</button><button class="print" id="angPrint">Drucken / PDF</button></div>
+   <div class="printhead"><img src="logo.png" alt=""><span class="ph-co">Alzinger Maschinenbau GmbH</span><span class="ph-nr">${nr&&nr!=='Angebot'?'Angebot '+nr:'Angebot'} · ${datum}</span></div>
    <div class="ang">
      <div class="head">
        <div style="display:flex;gap:13px;align-items:center">
@@ -1515,7 +1516,7 @@ function openAngebot(){
        <div><h4>Zahlungsbedingungen</h4><p>Zahlbar innerhalb von 7 Tagen netto.</p></div>
        <div><h4>Lieferzeit</h4><p>Nach Vereinbarung.</p></div>
      </div>
-     <div class="fine">Dieses Angebot ist freibleibend und unverbindlich, 30 Tage gültig. Alle Preise in Euro. Es gelten die AGB der Alzinger Maschinenbau GmbH. Sätze: Laser ${fmt(PARAMS.laser_satz,2)} €/h · Abkanten ${fmt(PARAMS.abkant_satz,2)} €/h · Marge ${fmt(PARAMS.marge,0)} %.</div>
+     <div class="fine">Dieses Angebot ist freibleibend und unverbindlich, 30 Tage gültig. Alle Preise in Euro. Es gelten die AGB der Alzinger Maschinenbau GmbH.</div>
    </div>`;
   document.body.appendChild(w);
   $('#angBack').onclick=()=>w.remove(); $('#angPrint').onclick=()=>window.print();
