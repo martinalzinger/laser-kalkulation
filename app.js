@@ -104,6 +104,26 @@ function estimateLaserMin(p){
   const rapid=beam*0.10;                                    // Eilgang ~10%
   return +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
 }
+// Zusammensetzung der Laserzeit als Text (für die Kostenaufschlüsselung)
+function laserTimeDetail(p){
+  if(p.source==='pdf') return `Laserzeit <b>${fmt(p.laser_min,2)} min/St</b> – exakt aus TruTops-Plan`;
+  if(!p._autoLaser)    return `Laserzeit <b>${fmt(p.laser_min,2)} min/St</b> – manuell gesetzt`;
+  const ov=PARAMS.laser_overhead, v=speedFor(p.material,p.dicke||1);
+  const cut=(p.cutlen_mm||0)/Math.max(150,v)*ov;
+  const grav=(p.marklen_mm||0)/MARK_SPEED*ov;
+  const pi=(p.einstech||0)*pierceTime(p.dicke||1)/60*ov;
+  const rap=((p.cutlen_mm||0)/Math.max(150,v)+(p.marklen_mm||0)/MARK_SPEED)*0.10*ov;
+  let s=`Laserzeit <b>${fmt(p.laser_min,2)} min/St</b> = Schneiden ${fmt(cut,2)} (${fmt(p.cutlen_mm,0)} mm @ ${fmt(v/1000,1)} m/min)`;
+  if((p.marklen_mm||0)>0) s+=` + Gravur ${fmt(grav,2)} (${fmt(p.marklen_mm,0)} mm @ ${fmt(MARK_SPEED/1000,0)} m/min)`;
+  s+=` + Einstiche ${fmt(pi,2)} (${p.einstech}×) + Eilgang ${fmt(rap,2)} · inkl. Overhead ×${fmt(ov,1)}`;
+  return s;
+}
+// Zusammensetzung der Biegezeit als Text
+function bendTimeDetail(c){
+  if(!(c.biege_s>0)) return 'keine Biegungen';
+  const bends=Math.max(0,Math.round((c.biege_s-PARAMS.handling_s)/PARAMS.t_biege_s));
+  return `Biegezeit <b>${fmt(c.biege_s,0)} s/St</b> = Handling ${fmt(PARAMS.handling_s,0)} s + ${bends} × ${fmt(PARAMS.t_biege_s,0)} s je Biegung`;
+}
 // CAD-Teile: Gewicht (und ggf. Laserzeit) aus Geometrie neu berechnen
 function recomputeCad(p){
   const d=density(p.material);
@@ -1145,6 +1165,7 @@ function renderPositions(){
       <div class="cs-item dim"><span class="k">VK/St +${fmt(PARAMS.marge,0)}%</span><span class="v">${eur(c.vk)}</span></div>
       <div class="cs-item tot"><span class="k">Gesamt ${c.menge}×</span><span class="v">${eur(c.position)}</span></div>
     </div><div class="cs-hint">Werte je Stück · Programmieren &amp; Rüsten auf Menge ${c.menge} verteilt</div>
+    <div class="cs-hint">${laserTimeDetail(p)} &nbsp;·&nbsp; ${bendTimeDetail(c)}</div>
     <div class="cs-staffel"><div class="lbl">Staffelpreise (VK netto je Stück)</div><div class="qs">${
       [...new Set([1,5,10,25,50,c.menge])].sort((a,b)=>a-b).map(q=>{const u=unitVkAt(p,q);return `<div class="cs-q${q===c.menge?' cur':''}"><span class="qn">${q} Stück</span><span class="qp">${eur(u)}</span><span class="qg">= ${eur(u*q)}</span></div>`;}).join('')
     }</div></div>`;
