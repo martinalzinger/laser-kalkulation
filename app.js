@@ -135,13 +135,12 @@ function dxfContourNorm(draw,bbox){
     if(e.t==='pl'){ pts=e.pts; closed=e.closed; }
     else if(e.t==='circle'){ pts=flattenArc(e.c,e.r,0,2*Math.PI,24); closed=true; }
     else if(e.t==='arc'){ pts=flattenArc(e.c,e.r,e.a0,e.a1,16); }
-    if(!pts||!pts.length) continue;
+    if(!pts||!pts.length||!closed) continue;   // nur GESCHLOSSENE Konturen füllen – offene würden die Maske zerstören
     d+='M'+NX(pts[0].x).toFixed(4)+' '+NY(pts[0].y).toFixed(4)+' ';
     for(let i=1;i<pts.length;i++) d+='L'+NX(pts[i].x).toFixed(4)+' '+NY(pts[i].y).toFixed(4)+' ';
-    if(closed){ d+='Z ';
-      let a=1e9,b=1e9,cc=-1e9,dd=-1e9; pts.forEach(p=>{const X=NX(p.x),Y=NY(p.y); if(X<a)a=X;if(Y<b)b=Y;if(X>cc)cc=X;if(Y>dd)dd=Y;});
-      loops.push({x:a,y:b,w:cc-a,h:dd-b,area:(cc-a)*(dd-b)});
-    }
+    d+='Z ';
+    let a=1e9,b=1e9,cc=-1e9,dd=-1e9; pts.forEach(p=>{const X=NX(p.x),Y=NY(p.y); if(X<a)a=X;if(Y<b)b=Y;if(X>cc)cc=X;if(Y>dd)dd=Y;});
+    loops.push({x:a,y:b,w:cc-a,h:dd-b,area:(cc-a)*(dd-b)});
   }
   loops.sort((p,q)=>q.area-p.area);
   const holes=loops.slice(1).filter(l=>l.w>0.1&&l.h>0.1);
@@ -837,9 +836,9 @@ function parseDxfGeom(text){
     }
   }
   // offene Segmente an den Endpunkten zu Konturen verketten (CAD-Export = lose Linien/Bögen), je Bearbeitung
-  function chainSegs(list,kind){
-    const tol=0.05, dEq=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y)<tol;
-    const used=new Array(list.length).fill(false);
+  function chainOnce(list,tol){
+    const dEq=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y)<tol;
+    const used=new Array(list.length).fill(false); const out=[];
     for(let i=0;i<list.length;i++){
       if(used[i]||list[i].length<2) continue; used[i]=true;
       let chain=list[i].slice(), grew=true;
@@ -852,8 +851,22 @@ function parseDxfGeom(text){
           if(dEq(head,s[0])){ chain=s.slice(1).reverse().concat(chain); used[j]=true; grew=true; break; }
         }
       }
-      const closed=chain.length>=3 && dEq(chain[0],chain[chain.length-1]);
-      if(closed) chain.pop();
+      out.push(chain);
+    }
+    return out;
+  }
+  function chainSegs(list,kind){
+    const gapOf=c=>Math.hypot(c[0].x-c[c.length-1].x, c[0].y-c[c.length-1].y);
+    // 1. Runde exakt (0,05 mm); übrig gebliebene offene Ketten in 2. Runde toleranter (0,5 mm) verbinden
+    let chains=chainOnce(list,0.05);
+    const closed1=chains.filter(c=>c.length>=3&&gapOf(c)<0.8);
+    let open=chains.filter(c=>!(c.length>=3&&gapOf(c)<0.8));
+    if(open.length>1) open=chainOnce(open,0.5);
+    for(const chain of closed1.concat(open)){
+      // Schließen großzügiger als Verketten: kleine Export-Lücken (bis 0,8 mm) gelten als geschlossen
+      const gap=gapOf(chain);
+      const closed=chain.length>=3 && gap<0.8;
+      if(closed && gap<0.05) chain.pop();
       draw.push({t:'pl',pts:chain,closed,kind});
     }
   }
@@ -882,8 +895,25 @@ function recomputeDxfPart(p){
   let area = loops.length ? loops[0].area - loops.slice(1).reduce((a,l)=>a+l.area,0) : bb;
   if(area<0) area = loops.length?loops[0].area:bb;
   p.cutlen_mm=cut; p.marklen_mm=mark; p.area_m2=area/1e6; p.einstech=Math.max(1,loops.length);
-  const dc=dxfContourNorm(p.dxf.filter(e=>e.kind==='cut'), p.bbox);
-  p.contourNorm=dc.path; p.holes=dc.holes;
+  if(loops.length){
+    const dc=dxfContourNorm(p.dxf.filter(e=>e.kind==='cut'), p.bbox);
+    p.contourNorm=dc.path; p.holes=dc.holes;
+  } else {
+    // Sicherheitsnetz: keine geschlossene Schnittkontur → konvexe Hülle als Schachtel-Kontur
+    // (sonst wäre die Füllmaske leer und der Packer würde solche Teile übereinander stapeln)
+    const pts=[];
+    for(const e of p.dxf){ if(e.kind!=='cut') continue;
+      if(e.t==='circle'){ for(let i=0;i<8;i++){const a=2*Math.PI*i/8; pts.push({x:e.c.x+e.r*Math.cos(a), y:e.c.y+e.r*Math.sin(a)});} }
+      else if(e.pts) e.pts.forEach(q=>pts.push(q));
+    }
+    if(pts.length>=3){
+      const hull=convexHull(pts);
+      const {minX,maxY,w,h}=p.bbox; const NX=x=>(x-minX)/(w||1), NY=y=>(maxY-y)/(h||1);
+      let d=''; hull.forEach((q,i)=>{ d+=(i?'L':'M')+NX(q.x).toFixed(4)+' '+NY(q.y).toFixed(4)+' '; });
+      p.contourNorm=d+'Z'; p.holes=[];
+      p.area_m2=shoelace(hull)/1e6;                 // Hüllfläche statt Bounding-Box
+    } else { p.contourNorm=''; p.holes=[]; }
+  }
   recomputeCad(p);
 }
 async function loadDxf(text,name,meta){
