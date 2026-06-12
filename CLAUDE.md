@@ -72,8 +72,8 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   Default: geschlossene Konturen = Schneiden, Layer-`H`-Linien (Solid Edge Biege-/Markierlinien) = Gravur.
   Im DXF-Viewer („Ansehen") ist **jede Kontur klickbar** und schaltet Schneiden→Gravieren→Ignorieren
   (Farben rot/blau/grau, `KIND_COLOR`). `recomputeDxfPart` rechnet danach Schnitt-/Gravurlänge
-  (`marklen_mm`, Gravur mit `MARK_SPEED` = 10 m/min in der Laserzeit), Fläche, Einstiche und die
-  Schachtel-Kontur (nur `cut`) neu.
+  (`marklen_mm`, Gravur mit `PARAMS.grav_m` m/min in der Laserzeit — Default 20, kalibriert an
+  TruTops-Bearbeitungszeiten, einstellbar im Menü), Fläche, Einstiche und die Schachtel-Kontur (nur `cut`) neu.
 
 ## Mengen-/Eingabelogik (große + kleine Teile)
 

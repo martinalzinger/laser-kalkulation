@@ -13,7 +13,8 @@ const PARAMS = {
   ruest_biege_min:8,   // min Biege-Rüsten je Position (umgelegt, nur bei Biegung)
   handling_s:15,       // s Handling je Teil beim Biegen
   t_biege_s:20,        // s je Biegung
-  laser_overhead:1.4   // Faktor Maschinenzeit/Beam-on (nur DXF-Schätzung)
+  laser_overhead:1.4,  // Faktor Maschinenzeit/Beam-on (nur DXF-Schätzung)
+  grav_m:20            // m/min Gravieren/Markieren (kalibriert an TruTops-Bearbeitungszeiten)
 };
 const MATERIAL = {'S235':1.30,'S355':1.50,'1.4301 V2A':4.90,'V4A':6.50,'AlMg3':4.20,'Hardox 500':2.40,'Hardox 600':2.80};
 const DENSITY = {'1.4':7900,'V2A':7900,'V4A':7900,'S2':7850,'S3':7850,'Hardox':7850,'AlMg':2700,'Al':2700}; // kg/m³ je Präfix
@@ -95,11 +96,11 @@ const grandTotal=()=>PARTS.length ? Math.max(sumPositions(), PARAMS.min_pos) : 0
 const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
 // Laserzeit-Schätzung (min) aus Schneidlänge + Gravur + Einstichen (DXF & STEP)
-const MARK_SPEED=10000;                                     // mm/min Gravieren/Markieren (Faserlaser)
+const markSpeed=()=>Math.max(1000,(PARAMS.grav_m||20)*1000);  // mm/min Gravieren (einstellbar, kalibriert an TruTops)
 function estimateLaserMin(p){
   const v=speedFor(p.material,p.dicke||1);
   const beam=(p.cutlen_mm||0)/Math.max(150,v)
-           + (p.marklen_mm||0)/MARK_SPEED;                  // Beam-on (min): Schnitt + Gravur
+           + (p.marklen_mm||0)/markSpeed();                 // Beam-on (min): Schnitt + Gravur
   const pierce=(p.einstech||0)*pierceTime(p.dicke||1)/60;   // Einstechzeit
   const rapid=beam*0.10;                                    // Eilgang ~10%
   return +((beam+pierce+rapid)*PARAMS.laser_overhead).toFixed(2);
@@ -110,11 +111,11 @@ function laserTimeDetail(p){
   if(!p._autoLaser)    return `Laserzeit <b>${fmt(p.laser_min,2)} min/St</b> – manuell gesetzt`;
   const ov=PARAMS.laser_overhead, v=speedFor(p.material,p.dicke||1);
   const cut=(p.cutlen_mm||0)/Math.max(150,v)*ov;
-  const grav=(p.marklen_mm||0)/MARK_SPEED*ov;
+  const grav=(p.marklen_mm||0)/markSpeed()*ov;
   const pi=(p.einstech||0)*pierceTime(p.dicke||1)/60*ov;
-  const rap=((p.cutlen_mm||0)/Math.max(150,v)+(p.marklen_mm||0)/MARK_SPEED)*0.10*ov;
+  const rap=((p.cutlen_mm||0)/Math.max(150,v)+(p.marklen_mm||0)/markSpeed())*0.10*ov;
   let s=`Laserzeit <b>${fmt(p.laser_min,2)} min/St</b> = Schneiden ${fmt(cut,2)} (${fmt(p.cutlen_mm,0)} mm @ ${fmt(v/1000,1)} m/min)`;
-  if((p.marklen_mm||0)>0) s+=` + Gravur ${fmt(grav,2)} (${fmt(p.marklen_mm,0)} mm @ ${fmt(MARK_SPEED/1000,0)} m/min)`;
+  if((p.marklen_mm||0)>0) s+=` + Gravur ${fmt(grav,2)} (${fmt(p.marklen_mm,0)} mm @ ${fmt(markSpeed()/1000,0)} m/min)`;
   s+=` + Einstiche ${fmt(pi,2)} (${p.einstech}×) + Eilgang ${fmt(rap,2)} · inkl. Overhead ×${fmt(ov,1)}`;
   return s;
 }
@@ -1404,7 +1405,7 @@ function bindParams(){
     p_laser:['laser_satz',2], p_abk:['abkant_satz',2], p_prog_satz:['prog_satz',2],
     p_marge:['marge',0], p_min:['min_pos',2],
     p_progmin:['prog_min',0], p_rl:['ruest_laser_min',0], p_rb:['ruest_biege_min',0],
-    p_hand:['handling_s',0], p_tb:['t_biege_s',0], p_ovh:['laser_overhead',2]
+    p_hand:['handling_s',0], p_tb:['t_biege_s',0], p_ovh:['laser_overhead',2], p_grav:['grav_m',0]
   };
   for(const id in map){ const [key,dec]=map[id]; const el=$('#'+id); if(!el) continue;
     el.value=fmt(PARAMS[key],dec);
