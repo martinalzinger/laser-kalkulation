@@ -1138,8 +1138,8 @@ function renderPositions(){
       <div class="cs-item"><span class="k">Material</span><span class="v">${eur(c.matk)}</span></div>
       <div class="cs-item"><span class="k">Programmieren</span><span class="v">${eur(c.progk)}</span></div>
       <div class="cs-item"><span class="k">Rüsten</span><span class="v">${eur(c.ruestk)}</span></div>
-      <div class="cs-item"><span class="k">Lasern</span><span class="v">${eur(c.laserk)}</span></div>
-      <div class="cs-item"><span class="k">Biegen</span><span class="v">${eur(c.biegek)}</span></div>
+      <div class="cs-item"><span class="k">Lasern</span><span class="v">${eur(c.laserk)}</span><span class="tm">${fmt(p.laser_min,2)} min/St</span></div>
+      <div class="cs-item"><span class="k">Biegen</span><span class="v">${eur(c.biegek)}</span><span class="tm">${c.biege_s>0?(c.biege_s>=90?fmt(c.biege_s/60,1)+' min/St':fmt(c.biege_s,0)+' s/St'):'—'}</span></div>
       <div class="cs-sep"></div>
       <div class="cs-item dim"><span class="k">Selbstkosten/St</span><span class="v">${eur(c.selbstk)}</span></div>
       <div class="cs-item dim"><span class="k">VK/St +${fmt(PARAMS.marge,0)}%</span><span class="v">${eur(c.vk)}</span></div>
