@@ -225,19 +225,21 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 .ang .ang-title::after{content:"";display:block;width:54px;height:4px;background:var(--red);border-radius:2px;margin:16px 0}
 .ang .ang-sub{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--red);font-weight:600;margin-bottom:26px}
 .printhead{display:none}   /* nur im Druck sichtbar – Akzentbalken auf jeder Seite */
-@page{size:A4;margin:0}   /* Rand 0 = Browser druckt keine Kopf-/Fußzeile (Titel/URL/Seitenzahl) */
+/* Seitenrand oben 24mm = reservierter Platz für die Akzentbalken-Kopfzeile auf JEDER Seite;
+   Seiten ohne Browser-Kopf-/Fußzeile (im Druckdialog „Kopf- und Fußzeilen" aus). */
+@page{size:A4;margin:24mm 0 14mm}
 @media print{
   body>*:not(#angebot){display:none!important}   /* nur das Angebot drucken, nicht die App dahinter */
   .angbar{display:none!important}
   body{padding:0;background:#fff}
   #angebot{position:static;overflow:visible;inset:auto}
-  .ang{max-width:none;padding:18mm 16mm 14mm}
+  .ang{max-width:none;padding:0 16mm}
   .ang .accent{display:none}                      /* Akzent kommt aus der fixen Kopfzeile (jede Seite) */
   .ang .basis{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .ang .opt,.ang .terms,.ang .sums,.ang .basis,.ang .lethead{break-inside:avoid}
   .ang .lead,.ang .an-addr{line-height:1.9}
-  /* Akzentbalken-Kopfzeile auf JEDER Druckseite (position:fixed wiederholt sich pro Seite) */
-  .printhead{display:flex;gap:3mm;position:fixed;top:0;left:0;right:0;height:9mm;padding:5mm 16mm 0;background:#fff;
+  /* Akzentbalken-Kopfzeile in den oberen Seitenrand (position:fixed wiederholt sich pro Seite) */
+  .printhead{display:flex;gap:3mm;position:fixed;top:0;left:0;right:0;padding:10mm 16mm 0;
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
   .printhead i{height:1.4mm;border-radius:1mm;display:block}
   .printhead .a1{flex:0 0 34mm;background:var(--red)}
@@ -422,7 +424,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
       <button class="btn g" id="btnCsv">⤓ CSV</button>
       <button class="btn p" id="btnAngebot">Angebot ansehen ›</button>
     </div>
-    <span class="appver" title="App-Version">v24</span>
+    <span class="appver" title="App-Version">v25</span>
   </div>
 </div>
 
@@ -471,7 +473,7 @@ body{font-family:var(--sans);background:var(--paper);color:var(--ink);line-heigh
 <script src="lib/occt-import-js.js"></script>
 <script src="lib/jszip.min.js"></script>
 <!-- Versionsnummer (?v=...) bei jedem Deploy hochzählen, damit der Browser-Cache die neue Datei lädt -->
-<script src="parser.js?v=20260609zg"></script>
-<script src="app.js?v=20260609zg"></script>
+<script src="parser.js?v=20260609zh"></script>
+<script src="app.js?v=20260609zh"></script>
 </body>
 </html>
