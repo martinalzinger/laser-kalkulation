@@ -1500,9 +1500,10 @@ function openAngebot(){
   const w=document.createElement('div'); w.id='angebot';
   w.innerHTML=`
    <div class="angbar"><button class="back" id="angBack">‹ Zurück</button><button class="print" id="angPrint">Drucken / PDF</button></div>
-   <div class="printhead"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
    <div class="ang">
-     <div class="accent"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+    <table class="angtbl"><thead><tr><td>
+      <div class="runhead"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+    </td></tr></thead><tbody><tr><td>
      <div class="lethead">
        <div class="le-left">
          <img src="logo.png" alt="Alzinger Maschinenbau">
@@ -1523,6 +1524,7 @@ function openAngebot(){
        <div><h4>Lieferzeit</h4><p>Nach Vereinbarung.</p></div>
      </div>
      <div class="fine">Dieses Angebot ist freibleibend und unverbindlich, 30 Tage gültig. Alle Preise in Euro. Es gelten die AGB der Alzinger Maschinenbau GmbH.</div>
+    </td></tr></tbody><tfoot><tr><td><div class="runfoot"></div></td></tr></tfoot></table>
    </div>`;
   document.body.appendChild(w);
   $('#angBack').onclick=()=>w.remove(); $('#angPrint').onclick=()=>window.print();
