@@ -7,7 +7,7 @@ const PARAMS = {
   abkant_satz:85.00,   // €/h Abkanten
   prog_satz:60.00,     // €/h Programmierung/Büro
   marge:30,            // % Aufschlag auf VK
-  min_pos:15,          // € Mindestposition
+  min_pos:15,          // € Mindestauftrag (Untergrenze für die GESAMTE Bestellung, nicht je Position)
   prog_min:12,         // min Programmieren je Teilenummer (auf Menge umgelegt)
   ruest_laser_min:5,   // min Laser-Rüsten je Position (umgelegt)
   ruest_biege_min:8,   // min Biege-Rüsten je Position (umgelegt, nur bei Biegung)
@@ -85,12 +85,13 @@ function calc(p){
   const selbstk=varUnit+progk+ruestk;
   const m=PARAMS.marge/100;
   const vk=m<1?selbstk/(1-m):selbstk;
-  const position=Math.max(vk*menge,PARAMS.min_pos);
+  const position=vk*menge;                                  // Mindestpreis greift auf den GESAMTEN Auftrag (grandTotal)
   return {matk,progk,ruestk,laserk,biegek,biege_s,varUnit,fixPos,selbstk,vk,position,menge,known};
 }
 // VK je Stück bei Stückzahl Q (Fixkosten ÷ Q) – für Staffelpreise
 function unitVkAt(p,Q){ const c=calc(p); const sk=c.varUnit + c.fixPos/Math.max(1,Q); const m=PARAMS.marge/100; return m<1?sk/(1-m):sk; }
-const grandTotal=()=>PARTS.reduce((a,p)=>a+calc(p).position,0);
+const sumPositions=()=>PARTS.reduce((a,p)=>a+calc(p).position,0);
+const grandTotal=()=>PARTS.length ? Math.max(sumPositions(), PARAMS.min_pos) : 0;   // Mindestauftrag
 const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
 // Laserzeit-Schätzung (min) aus Schneidlänge + Gravur + Einstichen (DXF & STEP)
@@ -1143,7 +1144,7 @@ function renderPositions(){
       <div class="cs-item dim"><span class="k">Selbstkosten/St</span><span class="v">${eur(c.selbstk)}</span></div>
       <div class="cs-item dim"><span class="k">VK/St +${fmt(PARAMS.marge,0)}%</span><span class="v">${eur(c.vk)}</span></div>
       <div class="cs-item tot"><span class="k">Gesamt ${c.menge}×</span><span class="v">${eur(c.position)}</span></div>
-    </div><div class="cs-hint">Werte je Stück · Programmieren &amp; Rüsten auf Menge ${c.menge} verteilt${c.position>c.vk*c.menge+0.005?' · Mindestposition '+eur(PARAMS.min_pos):''}</div>
+    </div><div class="cs-hint">Werte je Stück · Programmieren &amp; Rüsten auf Menge ${c.menge} verteilt</div>
     <div class="cs-staffel"><div class="lbl">Staffelpreise (VK netto je Stück)</div><div class="qs">${
       [...new Set([1,5,10,25,50,c.menge])].sort((a,b)=>a-b).map(q=>{const u=unitVkAt(p,q);return `<div class="cs-q${q===c.menge?' cur':''}"><span class="qn">${q} Stück</span><span class="qp">${eur(u)}</span><span class="qg">= ${eur(u*q)}</span></div>`;}).join('')
     }</div></div>`;
@@ -1440,7 +1441,7 @@ function openAngebot(){
      <p class="lead">Sehr geehrte Damen und Herren,<br><br>wir bedanken uns herzlich für Ihr Interesse und unterbreiten Ihnen gerne – freibleibend – das nachfolgende Angebot über die nachstehenden Laser- &amp; Abkantteile.</p>
      <div class="basis"><div><div style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#cfae6e">Auftragsumfang</div><div class="t">${PARTS.length} Positionen · ${totalStk()} Teile</div><div style="font-family:var(--mono);font-size:11px;color:#bdbab2;margin-top:6px">${metaSrc}</div></div><div class="p">${eur(total)}</div></div>
      <div class="optgroup"><div class="ogh">Positionen</div>${opts}</div>
-     <div class="sums"><div class="srow"><span>Zwischensumme netto</span><span style="font-family:var(--mono)">${eur(total)}</span></div><div class="srow tot"><span>Gesamtpreis netto</span><span class="v">${eur(total)}</span></div></div>
+     <div class="sums"><div class="srow"><span>Zwischensumme netto</span><span style="font-family:var(--mono)">${eur(sumPositions())}</span></div>${total>sumPositions()+0.005?`<div class="srow"><span>Mindermengenzuschlag (Mindestauftrag ${eur(PARAMS.min_pos)})</span><span style="font-family:var(--mono)">${eur(total-sumPositions())}</span></div>`:''}<div class="srow tot"><span>Gesamtpreis netto</span><span class="v">${eur(total)}</span></div></div>
      <div class="terms">
        <div><h4>Gewährleistung</h4><p>1 Jahr ab Auslieferung, nicht auf Verschleißteile.</p></div>
        <div><h4>Lieferbedingungen</h4><p>FCA Schierling Germany (Incoterms 2010).</p></div>
