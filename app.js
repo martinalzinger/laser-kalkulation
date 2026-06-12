@@ -14,7 +14,8 @@ const PARAMS = {
   handling_s:15,       // s Handling je Teil beim Biegen
   t_biege_s:20,        // s je Biegung
   laser_overhead:1.4,  // Faktor Maschinenzeit/Beam-on (nur DXF-Schätzung)
-  grav_m:20            // m/min Gravieren/Markieren (kalibriert an TruTops-Bearbeitungszeiten)
+  grav_m:20,           // m/min Gravieren/Markieren (kalibriert an TruTops-Bearbeitungszeiten)
+  mwst:19              // % Mehrwertsteuer (Ausweis im Angebot)
 };
 const MATERIAL = {'S235':1.30,'S355':1.50,'1.4301 V2A':4.90,'V4A':6.50,'AlMg3':4.20,'Hardox 500':2.40,'Hardox 600':2.80};
 const DENSITY = {'1.4':7900,'V2A':7900,'V4A':7900,'S2':7850,'S3':7850,'Hardox':7850,'AlMg':2700,'Al':2700}; // kg/m³ je Präfix
@@ -1405,7 +1406,7 @@ let tT; function toast(m){let t=$('#toast');if(!t){t=document.createElement('div
 function bindParams(){
   const map={
     p_laser:['laser_satz',2], p_abk:['abkant_satz',2], p_prog_satz:['prog_satz',2],
-    p_marge:['marge',0], p_min:['min_pos',2],
+    p_marge:['marge',0], p_min:['min_pos',2], p_mwst:['mwst',0],
     p_progmin:['prog_min',0], p_rl:['ruest_laser_min',0], p_rb:['ruest_biege_min',0],
     p_hand:['handling_s',0], p_tb:['t_biege_s',0], p_ovh:['laser_overhead',2], p_grav:['grav_m',0]
   };
@@ -1465,13 +1466,13 @@ function openAngebot(){
      <p class="lead">Sehr geehrte Damen und Herren,<br><br>wir bedanken uns herzlich für Ihr Interesse und unterbreiten Ihnen gerne – freibleibend – das nachfolgende Angebot über die nachstehenden Laser- &amp; Abkantteile.</p>
      <div class="basis"><div><div style="font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#cfae6e">Auftragsumfang</div><div class="t">${PARTS.length} Positionen · ${totalStk()} Teile</div><div style="font-family:var(--mono);font-size:11px;color:#bdbab2;margin-top:6px">${metaSrc}</div></div><div class="p">${eur(total)}</div></div>
      <div class="optgroup"><div class="ogh">Positionen</div>${opts}</div>
-     <div class="sums"><div class="srow"><span>Zwischensumme netto</span><span style="font-family:var(--mono)">${eur(sumPositions())}</span></div>${total>sumPositions()+0.005?`<div class="srow"><span>Mindermengenzuschlag (Mindestauftrag ${eur(PARAMS.min_pos)})</span><span style="font-family:var(--mono)">${eur(total-sumPositions())}</span></div>`:''}<div class="srow tot"><span>Gesamtpreis netto</span><span class="v">${eur(total)}</span></div></div>
+     <div class="sums"><div class="srow"><span>Zwischensumme netto</span><span style="font-family:var(--mono)">${eur(sumPositions())}</span></div>${total>sumPositions()+0.005?`<div class="srow"><span>Mindermengenzuschlag (Mindestauftrag ${eur(PARAMS.min_pos)})</span><span style="font-family:var(--mono)">${eur(total-sumPositions())}</span></div>`:''}<div class="srow"><span>Gesamtpreis netto</span><span style="font-family:var(--mono)">${eur(total)}</span></div><div class="srow"><span>zzgl. MwSt. ${fmt(PARAMS.mwst,0)} %</span><span style="font-family:var(--mono)">${eur(total*PARAMS.mwst/100)}</span></div><div class="srow tot"><span>Gesamtpreis brutto</span><span class="v">${eur(total*(1+PARAMS.mwst/100))}</span></div></div>
      <div class="terms">
        <div><h4>Lieferbedingungen</h4><p>FCA Schierling Germany (Incoterms 2010).</p></div>
        <div><h4>Zahlungsbedingungen</h4><p>Zahlbar innerhalb von 7 Tagen netto.</p></div>
        <div><h4>Lieferzeit</h4><p>Nach Vereinbarung.</p></div>
      </div>
-     <div class="fine">Dieses Angebot ist freibleibend und unverbindlich, 30 Tage gültig. Alle Preise in Euro, netto zzgl. gesetzlicher Mehrwertsteuer. Es gelten die AGB der Alzinger Maschinenbau GmbH. Sätze: Laser ${fmt(PARAMS.laser_satz,2)} €/h · Abkanten ${fmt(PARAMS.abkant_satz,2)} €/h · Marge ${fmt(PARAMS.marge,0)} %.</div>
+     <div class="fine">Dieses Angebot ist freibleibend und unverbindlich, 30 Tage gültig. Alle Preise in Euro. Es gelten die AGB der Alzinger Maschinenbau GmbH. Sätze: Laser ${fmt(PARAMS.laser_satz,2)} €/h · Abkanten ${fmt(PARAMS.abkant_satz,2)} €/h · Marge ${fmt(PARAMS.marge,0)} %.</div>
    </div>`;
   document.body.appendChild(w);
   $('#angBack').onclick=()=>w.remove(); $('#angPrint').onclick=()=>window.print();
