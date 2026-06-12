@@ -91,8 +91,9 @@ STEP- und DXF-Dateien sowie Biegeprogrammen (JUPIDU/HTML). Dateien: `index.html`
   `SPEED.stahl.klein`. `effCutSpeed`/`konturSpeed` interpolieren je nach mittlerem Konturumfang (Schnitt ÷
   Konturen) konkav zwischen Klein und Gross; Konturgröße zusätzlich auf die **Teilgröße** (`partMaxDim`)
   gedeckelt (kurze Geraden → nie Topspeed). **Gas-abhängig:** dünn N2 (≤5 mm) Klein 4,5 m/min, sanfte Kurve
-  bis Gross ~600 mm; dick O2 (≥6 mm) **Mittel = Gross** (ab ~130 mm voll) und Klein kriecht mit 0,1 m/min
-  (O2 kann winzige Löcher in dickem Blech kaum) — fast Stufe. Nur bei Gross-Gruppen (bis `maxT`).
+  bis Gross ~600 mm; mitteldick O2 (6–8 mm) **Mittel = Gross** und Klein 0,1 m/min (O2 kann winzige Löcher
+  in 6–8 mm kaum) — fast Stufe; dick O2 (≥10 mm) **Klein ≈ Gross** (~0,9×, kein Tempoverlust mehr — kriecht
+  ohnehin). Alle drei Konturklassen je Dicke an der echten Schneidtabelle geprüft. Nur Gross-Gruppen (bis `maxT`).
   Gravur läuft mit `grav_m`
   (Default 20 m/min) **ohne** Schneid-Overhead (Faktor 1,05), Schneiden/Einstiche/Eilgang mit
   `laser_overhead`. Dünne gravur-lastige Teile bleiben Schätzung (echte TruTops-Werte teils widersprüchlich).

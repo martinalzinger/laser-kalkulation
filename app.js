@@ -134,11 +134,14 @@ function effCutSpeed(p){
   const g=SPEED[speedGroup(p.material)], t=p.dicke||1;
   const vGross=speedFor(p.material,t);
   if(g.gross && t<=(g.maxT||0)){
-    // Dünn N2 (≤5 mm): Klein 4,5 m/min, sanfte Kurve bis Gross bei ~600 mm.
-    // Dick O2 (≥6 mm): Klein 0,1 m/min (Kriechen), aber Mittel = Gross → ab ~130 mm voll (fast Stufe).
-    const thin=t<=5;
-    const vKlein=Math.min(vGross, thin ? (g.klein||4500) : 100);
-    const grossSize=thin ? 600 : 130;
+    // Echte TruTops-Kleinkontur-Werte (Stahl):
+    //  - Dünn N2 (≤5 mm): Klein 4,5 m/min, sanfte Kurve bis Gross bei ~600 mm.
+    //  - Mitteldick O2 (6–8 mm): Klein 0,1 m/min (winzige Löcher quasi Stillstand), Mittel = Gross → fast Stufe.
+    //  - Dick O2 (≥10 mm): Klein ≈ Gross (kein Tempoverlust mehr – das Blech kriecht ohnehin); ~0,9×Gross.
+    let vKlein, grossSize;
+    if(t<=5){ vKlein=Math.min(vGross, g.klein||4500); grossSize=600; }
+    else if(t<=8){ vKlein=100; grossSize=130; }            // 6/8 mm: 0,1 m/min Kriechen
+    else { vKlein=vGross*0.9; grossSize=130; }              // ≥10 mm: Klein ≈ Gross
     return Math.max(100, konturSpeed(p, vGross, vKlein, grossSize));
   }
   return Math.max(150,vGross);
