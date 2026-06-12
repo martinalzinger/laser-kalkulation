@@ -25,10 +25,12 @@ function density(m){ for(const k in DENSITY){ if(m&&m.includes(k)) return DENSIT
 // STAHL 1–15 mm = ECHTE TruTops-LTT-Werte (Konturart "Gross", S355MC, 6000 W, TC41) aus der hauseigenen
 // Schneidtabelle gemessen. Bis 5 mm STICKSTOFF: 1mm 51 · 2mm 30,5 · 3mm 17 · 4mm 9,5 · 5mm 7 m/min.
 // Ab 6 mm SAUERSTOFF: 6mm 3 · 8mm 2,6 · 10mm 2,38 · 12mm 2 · 15mm 1,62 · 20mm 1,2 · 25mm 0,94 m/min.
-// Wichtig: Das sind GROSSKONTUR-Werte. Kleine Konturen/Löcher fahren langsamer → siehe konturFactor().
+// Wichtig: Das sind GROSSKONTUR-Werte. Kleine Konturen/Löcher fahren langsamer → siehe effCutSpeed().
+// klein = echte TruTops-KLEINKONTUR-Geschwindigkeit (Stahl N2 1–5 mm = konstant 4,5 m/min, weil kleine
+// Konturen beschleunigungslimitiert sind – Topspeed wird nie erreicht). Für O2-Dick als ~0,6×Gross genähert.
 // Edelstahl/Alu = Richtwerte (verankert am realen Plan, 2 mm Edelstahl ≈ 19 m/min); echte LTT folgen.
 const SPEED = {
-  stahl:     {gross:true, maxT:25,  // 1–25 mm komplett echte Großkontur-Werte → Konturgröße wird verrechnet
+  stahl:     {gross:true, maxT:25, klein:4500,  // 1–25 mm echte Groß-/Kleinkontur-Werte → Konturgröße wird verrechnet
               t:[1,1.5,2,2.5,3,4,5,6,8,10,12,15,20,25],
               v:[51000,40000,30500,23000,17000,9500,7000,3000,2600,2380,2000,1620,1200,940]},
   edelstahl: {t:[1,1.5,2,3,4,5,6,8,10,12,15,20],
@@ -36,16 +38,21 @@ const SPEED = {
   alu:       {t:[1,2,3,4,5,6,8,10,12,15],
               v:[24000,13500,8500,5500,4000,3000,1800,1100,700,420]},
 };
-// Konturgrößen-Faktor: TruTops fährt Große/Mittlere/Kleine Konturen unterschiedlich schnell.
-// Die Tabelle oben hält die GROSSKONTUR-Geschwindigkeit; ein Teil mit vielen kleinen Löchern fährt
-// im Schnitt langsamer. Schätzung über den mittleren Konturumfang (Schnittlänge ÷ Konturen):
-// große, einfache Teile ≈ voll (Faktor 1), kleine/gelochte Teile bis Faktor 0,22.
-function konturFactor(p){
+// Effektive Schnittgeschwindigkeit zwischen KLEIN- und GROSSKONTUR, je nach mittlerem Konturumfang des
+// Teils (Schnittlänge ÷ Konturen). TruTops-Klassen (aus dem Regelwerk): Klein ≲120 mm, Gross ≳600 mm.
+// Konkave Interpolation (geometrisch) – kleine Konturen sind beschleunigungslimitiert, große erreichen
+// das volle Tempo. Beispiel 1 mm: kleine Löcher 4,5 m/min, mittlere ~11, große Außenkontur 51 m/min.
+function partMaxDim(p){                                  // größte Teilabmessung in der Ebene (mm)
+  const b=p.bbox; if(!b) return 1e9;
+  if(b.dims) return b.dims[b.dims.length-1]||1e9;        // STEP: längste Kante
+  return Math.max(b.w||0, b.h||0)||1e9;                  // DXF
+}
+function konturSpeed(p, vGross, vKlein){
   const n=Math.max(1, p.einstech||1);
-  const avg=(p.cutlen_mm||0)/n;                  // mittlerer Konturumfang (mm) – viele kleine Löcher → klein
-  const fA=avg/380;                              // Konturgröße: kleine/gelochte Teile fahren langsamer
-  const fB=(p.cutlen_mm||0)/2500;                // Gesamtschnitt: kurze/kleine Teile erreichen die Topspeed nicht
-  return Math.min(1, Math.max(0.22, Math.min(fA, fB)));
+  const avg=(p.cutlen_mm||0)/n;                          // mittlerer Konturumfang (mm)
+  const size=Math.min(avg, partMaxDim(p));              // auf Teilgröße deckeln: kurze Geraden → nie Topspeed
+  const f=Math.min(1, Math.max(0, (size-120)/(600-120))); // 0 = Klein (≤120 mm) … 1 = Gross (≥600 mm)
+  return vKlein*Math.pow(Math.max(vGross,vKlein)/vKlein, f);
 }
 function speedGroup(m){ if(!m) return 'stahl'; if(/1\.4|V2A|V4A/i.test(m)) return 'edelstahl'; if(/^Al|AlMg/i.test(m)) return 'alu'; return 'stahl'; }
 function speedFor(m,t){ const g=SPEED[speedGroup(m)],ts=g.t,vs=g.v; if(t<=ts[0])return vs[0]; if(t>=ts[ts.length-1])return vs[vs.length-1];
@@ -119,13 +126,17 @@ const totalStk=()=>PARTS.reduce((a,p)=>a+Math.max(1,parseInt(p.menge)||1),0);
 
 // Laserzeit-Schätzung (min) aus Schneidlänge + Gravur + Einstichen (DXF & STEP)
 const markSpeed=()=>Math.max(1000,(PARAMS.grav_m||20)*1000);  // mm/min Gravieren (einstellbar, kalibriert an TruTops)
-// Effektive Schnittgeschwindigkeit: bei Gross-basierten Tabellen (Stahl bis maxT) auf die
-// Konturgröße des Teils umgerechnet, sonst direkt der (bereits effektive) Tabellenwert.
+// Effektive Schnittgeschwindigkeit: bei Gross-basierten Tabellen (Stahl bis maxT) je nach Konturgröße
+// zwischen Klein- und Großkontur interpoliert, sonst direkt der (bereits effektive) Tabellenwert.
 function effCutSpeed(p){
   const g=SPEED[speedGroup(p.material)], t=p.dicke||1;
-  let v=speedFor(p.material,t);
-  if(g.gross && t<=(g.maxT||0)) v*=konturFactor(p);
-  return Math.max(150,v);
+  const vGross=speedFor(p.material,t);
+  if(g.gross && t<=(g.maxT||0)){
+    // Klein: dünn (≤5 mm N2) echte 4,5 m/min, dick (O2) ~0,6×Gross; nie schneller als Gross
+    const vKlein=Math.min(vGross, t<=5 ? (g.klein||4500) : vGross*0.6);
+    return Math.max(150, konturSpeed(p, vGross, vKlein));
+  }
+  return Math.max(150,vGross);
 }
 function estimateLaserMin(p){
   const v=effCutSpeed(p);
